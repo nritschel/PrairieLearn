@@ -15,11 +15,15 @@
       this.files = [];
       this.acceptedFiles = options.acceptedFiles || [];
       this.acceptedFilesLowerCase = this.acceptedFiles.map((f) => f.toLowerCase());
+      // The list of optional files contains tuples with patterns (if regex-based) and display names
       this.optionalFiles = options.optionalFiles || [];
+      // Divide optional files into static names and regex patterns
       this.optionalFilesStatic = this.optionalFiles.filter((f) => f[0] === null).map((f) => f[1]);
       this.optionalFilesLowerCase = this.optionalFilesStatic.map((f) => f.toLowerCase());
       this.optionalFilesWildcard = this.optionalFiles.filter((f) => f[0] !== null);
 
+      // Look up the index of static names; for regexes, the index does not matter,
+      // as long as they can be distinguished from static names
       this.findFileNameIndex = (fileName) => {
         if (this.acceptedFilesLowerCase.includes(fileName)) {
           return this.acceptedFilesLowerCase.indexOf(fileName);
@@ -125,6 +129,8 @@
             return;
           }
 
+          // For static file names, look up the index to match capitalization,
+          // for regex patterns, accept the uploaded file name as-is
           if (acceptedFilesIdx < this.acceptedFiles.concat(this.optionalFilesStatic).length) {
             const acceptedName = this.acceptedFiles.concat(this.optionalFilesStatic)[
               acceptedFilesIdx
@@ -233,6 +239,7 @@
       var uuid = this.uuid;
       var index = 0;
 
+      // This is called repeatedly with different parameters for required/optional/regex entries
       var renderFileListEntry = (fileName, isOptional = false, isWildcard = false) => {
         var isExpanded = expandedFiles.includes(fileName);
         var fileData = this.getSubmittedFileContents(fileName);
@@ -356,12 +363,17 @@
         $fileList.append($file);
         index++;
       };
+
+      // First list required files...
       this.acceptedFiles.forEach((n) => renderFileListEntry(n));
+      // ...then static optional files...
       this.optionalFilesStatic.forEach((n) => renderFileListEntry(n, true));
+      // ...then all remaining uploaded files...
       this.files
         .map((f) => f.name)
         .filter((n) => !this.acceptedFiles.includes(n) && !this.optionalFilesStatic.includes(n))
         .forEach((n) => renderFileListEntry(n, true));
+      // ...and finally all wildcard patterns (which might accept an arbitrary number of uploads)
       this.optionalFilesWildcard
         .map((n) => n[1])
         .forEach((n) => renderFileListEntry(n, true, true));

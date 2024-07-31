@@ -13,8 +13,30 @@
     constructor(uuid, options) {
       this.uuid = uuid;
       this.files = [];
-      this.acceptedFiles = options.acceptedFiles || [];
-      this.acceptedFilesLowerCase = this.acceptedFiles.map((f) => f.toLowerCase());
+      this.requiredFiles = options.acceptedFiles || [];
+      this.acceptedFilesLowerCase = this.requiredFiles.map((f) => f.toLowerCase());
+      this.optionalFiles = options.optionalFiles || [];
+      this.optionalFilesRegex = options.optionalFilesRegex || [];
+      this.checkAcceptedFileName = (fileName) => {
+        if (this.acceptedFilesLowerCase.includes(fileName)) {
+          return this.acceptedFilesLowerCase.indexOf(fileName);
+        } else {
+          var i = this.optionalFilesRegex.findIndex((pattern, index) => {
+            if (pattern != null) {
+              return new RegExp(pattern, 'i').test(fileName);
+            } else {
+              return this.optionalFiles[index].replace(/\\(.)/g, '$1').toLowerCase() === fileName;
+            }
+          });
+
+          if (i >= 0) {
+            return this.acceptedFilesLowerCase.length + i;
+          } else {
+            return -1;
+          }
+        }
+      };
+
       this.pendingFileDownloads = new Set();
       this.failedFileDownloads = new Set();
 
@@ -83,7 +105,7 @@
         accept: (file, done) => {
           // fuzzy case match
           const fileNameLowerCase = file.name.toLowerCase();
-          if (this.acceptedFilesLowerCase.includes(fileNameLowerCase)) {
+          if (this.checkAcceptedFileName(fileNameLowerCase) >= 0) {
             return done();
           }
           return done('invalid file');
@@ -91,7 +113,7 @@
         addedfile: (file) => {
           // fuzzy case match
           const fileNameLowerCase = file.name.toLowerCase();
-          if (!this.acceptedFilesLowerCase.includes(fileNameLowerCase)) {
+          if (this.checkAcceptedFileName(fileNameLowerCase) < 0) {
             this.addWarningMessage(
               '<strong>' +
                 file.name +
@@ -100,8 +122,8 @@
             );
             return;
           }
-          const acceptedFilesIdx = this.acceptedFilesLowerCase.indexOf(fileNameLowerCase);
-          const acceptedName = this.acceptedFiles[acceptedFilesIdx];
+          const acceptedFilesIdx = this.checkAcceptedFileName(fileNameLowerCase);
+          const acceptedName = this.requiredFiles.concat(this.optionalFiles)[acceptedFilesIdx];
           this.addFileFromBlob(acceptedName, file, false);
         },
       });
@@ -202,13 +224,13 @@
 
       var uuid = this.uuid;
 
-      this.acceptedFiles.forEach((fileName, index) => {
+      this.requiredFiles.concat(this.optionalFiles).forEach((fileName, index) => {
         var isExpanded = expandedFiles.includes(fileName);
         var fileData = this.getSubmittedFileContents(fileName);
 
         var $file = $('<li class="list-group-item" data-file="' + fileName + '"></li>');
         var $fileStatusContainer = $(
-          '<div class="file-status-container collapsed d-flex flex-row" data-toggle="collapse" data-target="#file-preview-' +
+          '<div class="file-status-container collapsed d-flex flex-row mathjax_ignore" data-toggle="collapse" data-target="#file-preview-' +
             uuid +
             '-' +
             index +
@@ -240,7 +262,17 @@
             '<i class="file-status-icon far fa-circle" aria-hidden="true"></i>',
           );
         }
-        $fileStatusContainerLeft.append(fileName);
+        if (index >= this.requiredFiles.length) {
+          if (this.optionalFilesRegex[index - this.requiredFiles.length] != null) {
+            $fileStatusContainerLeft.append(
+              `Any files matching this name pattern: <em>${fileName}</em> (optional)`,
+            );
+          } else {
+            $fileStatusContainerLeft.append(`${fileName.replace(/\\(.)/g, '$1')} (optional)`);
+          }
+        } else {
+          $fileStatusContainerLeft.append(fileName);
+        }
         if (this.pendingFileDownloads.has(fileName)) {
           $fileStatusContainerLeft.append(
             '<p class="file-status">fetching previous submission...</p>',

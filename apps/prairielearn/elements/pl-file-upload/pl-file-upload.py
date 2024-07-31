@@ -2,6 +2,7 @@ import csv
 import hashlib
 import json
 import re
+import itertools
 from io import StringIO
 
 import chevron
@@ -27,15 +28,18 @@ def get_file_names_as_array(raw_file_names: str) -> list[str]:
     return next(reader)
 
 
-# Because only files are allowed, translating patterns into regex patterns is fairly simple
-def wildcard_to_regex(wildcard_pattern: str) -> str:
+# Translate glob patterns into regexes for consistent handling in Python and JS
+def wildcard_to_regex(wildcard_pattern: str) -> tuple[str, str]:
     result = "^"
     has_wildcard = False
     escape = False
+    in_range = False
     for c in wildcard_pattern:
         if escape:
             result += re.escape(c)
             escape = False
+        elif in_range and c != "]":
+            result += c
         elif c == "\\":
             escape = True
         elif c == "?":
@@ -44,17 +48,22 @@ def wildcard_to_regex(wildcard_pattern: str) -> str:
         elif c == "*":
             has_wildcard = True
             result += ".*"
-        elif c == "[" or c == "]" or c == "-":
+        elif c == "[":
             has_wildcard = True
+            in_range = True
+            result += c
+        elif c == "]":
+            in_range = False
             result += c
         else:
             result += re.escape(c)
 
+    # If there are no wildcards, return None and remove escapes for standard string comparison
     if not has_wildcard:
-        return None
+        return (None, wildcard_pattern.replace("\\",""))
 
     result += "$"
-    return result
+    return (result, wildcard_pattern)
 
 
 # Each pl-file-upload element is uniquely identified by the SHA1 hash of its
@@ -98,11 +107,13 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
 
 def render(element_html: str, data: pl.QuestionData) -> str:
-    if data["panel"] != "question":
-        return ""
-
     element = lxml.html.fragment_fromstring(element_html)
     uuid = pl.get_uuid()
+    parse_error = data["format_errors"].get("_files", None)
+    
+    # Currently, only invalid submissions get some special handling to display the error 
+    if data["panel"] != "question":
+        return ""
 
     raw_file_names = pl.get_string_attrib(element, "file-names", "")
     file_names = sorted(get_file_names_as_array(raw_file_names))
@@ -110,12 +121,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
 
     raw_optional_file_names = pl.get_string_attrib(element, "optional-file-names", "")
     optional_file_names = sorted(get_file_names_as_array(raw_optional_file_names))
-    optional_file_names_json = json.dumps(optional_file_names, allow_nan=False)
+    optional_file_patterns = [wildcard_to_regex(x) for x in optional_file_names]
 
     # Convert file name patterns to regular expressions to avoid specialized JS imports on the client side
-    optional_file_names_regex = json.dumps(
-        [wildcard_to_regex(x) for x in optional_file_names], allow_nan=False
-    )
+    optional_file_names_json = json.dumps(optional_file_patterns, allow_nan=False)
 
     answer_name = get_answer_name(raw_file_names, raw_optional_file_names)
 
@@ -129,19 +138,19 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     required_files = set(submitted_file_names) & set(file_names)
     wildcard_files = {
         file
-        for pattern, file in zip(optional_file_names, submitted_file_names)
-        if any(re.compile(pattern, re.IGNORECASE).match(file))
+        for pattern, file in itertools.product(optional_file_patterns, submitted_file_names)
+        if pattern[0] and re.compile(pattern[0], re.IGNORECASE).match(file) 
+            or not pattern[0] and pattern[1] == file
     }
     accepted_file_names = list(required_files | wildcard_files)
 
     accepted_file_names_json = json.dumps(accepted_file_names, allow_nan=False)
-    parse_error = data["format_errors"].get("_files", None)
 
     html_params = {
+        "question": True,
         "name": answer_name,
         "file_names": file_names_json,
         "optional_file_names": optional_file_names_json,
-        "optional_file_regex": optional_file_names_regex,
         "uuid": uuid,
         "editable": data["editable"],
         "submission_files_url": data["options"].get("submission_files_url", None),
@@ -179,20 +188,20 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
         add_format_error(data, "Could not parse submitted files.")
         parsed_files = []
 
-    # Filter out any files that were not listed in file_names or optional_file_names
+    # Create a list of tuples (regex, name); if regex is None, simple string comparison will be used
+    optional_file_pattern = [wildcard_to_regex(pattern) for pattern in optional_file_names]
+
+    # Pair up patterns and files and retain only files where at least one pattern matches
     wildcard_files = {
-        file
-        for pattern, file in zip(optional_file_names, parsed_files)
-        if any(
-            re.compile(wildcard_to_regex(pattern), re.IGNORECASE).match(
-                file.get("name", "")
-            )
-        )
+        file.get("name", "")
+        for pattern, file in itertools.product(optional_file_pattern, parsed_files)
+        if pattern[0] and re.compile(pattern[0], re.IGNORECASE).match(file.get("name", "")) 
+            or not pattern[0] and pattern[1] == file.get("name", "")
     }
     parsed_files = [
         x
         for x in parsed_files
-        if x.get("name", "") in required_file_names or x in wildcard_files
+        if x.get("name", "") in required_file_names or x.get("name", "") in wildcard_files
     ]
 
     # Return format error if cleaned file list is empty and allow_blank is not set

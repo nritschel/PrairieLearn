@@ -274,7 +274,7 @@
         if (isOptional) {
           if (isWildcard) {
             $fileStatusContainerLeft.append(
-              `Any files matching this name pattern: <em>${fileName}</em> (optional)`,
+              `Any files matching this naming pattern: <em>${fileName}</em> (optional)`,
             );
           } else {
             $fileStatusContainerLeft.append(`${fileName} (optional)`);
@@ -356,7 +356,7 @@
         $fileList.append($file);
         index++;
       };
-      this.acceptedFiles.forEach(renderFileListEntry);
+      this.acceptedFiles.forEach((n) => renderFileListEntry(n));
       this.optionalFilesStatic.forEach((n) => renderFileListEntry(n, true));
       this.files
         .map((f) => f.name)

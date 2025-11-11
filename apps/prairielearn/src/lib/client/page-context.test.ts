@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type z } from 'zod';
 
-import type { PageAuthzData } from '../authzData.types.js';
+import type { PageAuthzData } from '../authz-data-lib.js';
 
 import {
   type RawPageContextWithAuthzDataSchema,
@@ -190,6 +190,8 @@ describe('getCourseInstanceContext', () => {
       id: '1',
       long_name: 'Example Student Course Instance',
       short_name: 'Example Student Course',
+      publishing_end_date: null,
+      publishing_start_date: null,
     },
     course: {
       deleted_at: null,
@@ -215,6 +217,9 @@ describe('getCourseInstanceContext', () => {
       self_enrollment_use_enrollment_code: false,
       self_enrollment_restrict_to_institution: true,
       self_enrollment_enabled_before_date: null,
+      modern_publishing: false,
+      publishing_end_date: null,
+      publishing_start_date: null,
       sync_errors: null,
       sync_job_sequence_id: null,
       sync_warnings: null,

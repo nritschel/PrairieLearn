@@ -4,7 +4,7 @@ import { run } from '@prairielearn/run';
 
 import { NavPageSchema, NavbarTypeSchema } from '../../components/Navbar.types.js';
 import { SelectUserSchema } from '../authn.types.js';
-import { PageAuthzDataSchema } from '../authzData.types.js';
+import { PageAuthzDataSchema } from '../authz-data-lib.js';
 
 import {
   RawStaffAssessmentSchema,
@@ -46,6 +46,12 @@ export const PageContextWithAuthzDataSchema =
   RawPageContextWithAuthzDataSchema.brand<'PageContextWithAuthzData'>();
 export type PageContextWithAuthzData = z.infer<typeof PageContextWithAuthzDataSchema>;
 
+/**
+ * TODO: We want to merge
+ * getPageContext, getCourseInstanceContext, and getAssessmentContext into a single function.
+ *
+ * New options will be withAuthzData, pageType, and requestedRole.
+ */
 export function getPageContext(
   resLocals: Record<string, any>,
   options?: {

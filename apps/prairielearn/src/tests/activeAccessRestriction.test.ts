@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
 
-import { dangerousFullAuthzForTesting } from '../lib/authzData.js';
+import { dangerousFullSystemAuthz } from '../lib/authz-data-lib.js';
 import { config } from '../lib/config.js';
 import { AssessmentInstanceSchema } from '../lib/db-types.js';
 import { selectAssessmentByTid } from '../models/assessment.js';
@@ -22,8 +22,7 @@ describe(
   { timeout: 60_000 },
   function () {
     const storedConfig: Record<string, any> = {};
-    const context: Record<string, any> = {};
-    context.siteUrl = `http://localhost:${config.serverPort}`;
+    const context: Record<string, any> = { siteUrl: `http://localhost:${config.serverPort}` };
     context.baseUrl = `${context.siteUrl}/pl`;
 
     const headers: Record<string, string> = {};
@@ -79,8 +78,8 @@ describe(
       await ensureEnrollment({
         userId: user.user_id,
         courseInstance,
-        requestedRole: 'Student',
-        authzData: dangerousFullAuthzForTesting(),
+        requestedRole: 'System',
+        authzData: dangerousFullSystemAuthz(),
         actionDetail: 'implicit_joined',
       });
     });
@@ -88,7 +87,7 @@ describe(
     test.sequential(
       'ensure that the exam is not visible on the assessments page when no access rule applies',
       async () => {
-        headers.cookie = 'pl_test_date=1850-06-01T00:00:01Z';
+        headers.cookie = 'pl_test_date=1910-06-01T00:00:01Z';
 
         const response = await helperClient.fetchCheerio(context.assessmentListUrl, { headers });
         assert.isTrue(response.ok);
@@ -98,7 +97,7 @@ describe(
     );
 
     test.sequential('try to access the exam when no access rule applies', async () => {
-      headers.cookie = 'pl_test_date=1850-06-01T00:00:01Z';
+      headers.cookie = 'pl_test_date=1910-06-01T00:00:01Z';
 
       const response = await helperClient.fetchCheerio(context.examUrl, {
         headers,

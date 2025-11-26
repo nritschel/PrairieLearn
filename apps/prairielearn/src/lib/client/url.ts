@@ -57,9 +57,24 @@ export function getSelfEnrollmentLookupUrl(
   return `/pl/course_instance/lookup?${params.toString()}`;
 }
 
+export function getCourseInstanceSyncUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/syncs`;
+}
+
 export function getCourseInstanceJobSequenceUrl(
   courseInstanceId: string,
   jobSequenceId: string,
 ): string {
   return `/pl/course_instance/${courseInstanceId}/instructor/jobSequence/${jobSequenceId}`;
+}
+
+export function getCourseInstanceEditErrorUrl(
+  courseInstanceId: string,
+  jobSequenceId: string,
+): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/edit_error/${jobSequenceId}`;
+}
+
+export function getCourseInstanceSettingsUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/settings`;
 }

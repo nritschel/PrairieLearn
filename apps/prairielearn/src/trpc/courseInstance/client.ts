@@ -1,19 +1,21 @@
 import { createTRPCClient, httpLink } from '@trpc/client';
 import superjson from 'superjson';
 
-import type { AiGradingSettingsRouter } from '../trpc.js';
+import type { CourseInstanceRouter } from './trpc.js';
 
-export function createAiGradingSettingsTrpcClient({
+export function createCourseInstanceTrpcClient({
   csrfToken,
-  urlBase,
+  courseInstanceId,
+  urlBase = '',
 }: {
   csrfToken: string;
+  courseInstanceId: string;
   urlBase?: string;
 }) {
-  return createTRPCClient<AiGradingSettingsRouter>({
+  return createTRPCClient<CourseInstanceRouter>({
     links: [
       httpLink({
-        url: `${urlBase ?? (typeof window === 'undefined' ? '' : window.location.pathname)}/trpc`,
+        url: `${urlBase}/pl/course_instance/${courseInstanceId}/instructor/trpc`,
         headers: {
           'X-TRPC': 'true',
           'X-CSRF-Token': csrfToken,

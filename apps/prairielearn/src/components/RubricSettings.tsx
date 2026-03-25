@@ -97,7 +97,7 @@ export function RubricSettings({
     rubricData?.rubric.starting_points ?? 0,
   );
   const [minPoints, setMinPoints] = useState<number | null>(rubricData?.rubric.min_points ?? 0);
-  const [maxExtraPoints, setMaxExtraPoints] = useState<number>(
+  const [maxExtraPoints, setMaxExtraPoints] = useState<number | null>(
     rubricData?.rubric.max_extra_points ?? 0,
   );
   const [tagForGrading, setTagForGrading] = useState<boolean>(false);
@@ -139,7 +139,7 @@ export function RubricSettings({
   const maxPoints = roundPoints(
     (replaceAutoPoints
       ? (assessmentQuestion.max_points ?? 0)
-      : (assessmentQuestion.max_manual_points ?? 0)) + maxExtraPoints,
+      : (assessmentQuestion.max_manual_points ?? 0)) + (maxExtraPoints ?? 0),
   );
 
   const pointsWarnings: string[] = useMemo(() => {
@@ -247,7 +247,7 @@ export function RubricSettings({
       return;
     }
     const rubricData: ExportedRubricData = {
-      max_extra_points: maxExtraPoints,
+      max_extra_points: maxExtraPoints ?? 0,
       min_points: minPoints ?? 0,
       replace_auto_points: replaceAutoPoints,
       starting_points: startingPoints,
@@ -532,7 +532,7 @@ export function RubricSettings({
       <input type="hidden" name="__action" value="modify_rubric_settings" />
       <input type="hidden" name="modified_at" value={modifiedAt?.toISOString() ?? ''} />
       <input type="hidden" name="starting_points" value={startingPoints} />
-      <input type="hidden" name="max_extra_points" value={maxExtraPoints} />
+      <input type="hidden" name="max_extra_points" value={maxExtraPoints ?? ''} />
       <input type="hidden" name="min_points" value={minPoints ?? ''} />
       <div className="card-header collapsible-card-header d-flex align-items-center">
         <h2>Rubric settings</h2>
@@ -711,9 +711,13 @@ export function RubricSettings({
                     <input
                       className="form-control"
                       type="number"
-                      value={maxExtraPoints}
+                      value={maxExtraPoints ?? ''}
                       disabled={!hasCourseInstancePermissionEdit}
-                      onInput={(e: any) => setMaxExtraPoints(Number(e.target.value))}
+                      onInput={({ currentTarget }) =>
+                        setMaxExtraPoints(
+                          currentTarget.value.length > 0 ? Number(currentTarget.value) : null,
+                        )
+                      }
                     />
                   </label>
                 </div>

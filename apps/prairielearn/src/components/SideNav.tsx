@@ -1,9 +1,11 @@
 import clsx from 'clsx';
 
+import { truncateMiddle } from '@prairielearn/formatter';
 import { type HtmlValue, html } from '@prairielearn/html';
 import { run } from '@prairielearn/run';
 
 import { isEnterprise } from '../lib/license.js';
+import type { UntypedResLocals } from '../lib/res-locals.types.js';
 
 import { IssueBadgeHtml } from './IssueBadge.js';
 import type { NavPage, NavSubPage } from './Navbar.types.js';
@@ -23,12 +25,12 @@ interface SideNavTabInfo {
   checkActiveSubPageForPages?: NavPage[];
   /** For the side nav tab to be active, the navSubPage must be in activeSubPages. */
   activeSubPages: NavSubPage[];
-  urlSuffix: string | ((resLocals: Record<string, any>) => string);
+  urlSuffix: string | ((resLocals: UntypedResLocals) => string);
   iconClasses: string;
   tabLabel: string;
   tabTooltip?: string;
-  htmlSuffix?: (resLocals: Record<string, any>) => HtmlValue;
-  renderCondition?: (resLocals: Record<string, any>) => boolean;
+  htmlSuffix?: (resLocals: UntypedResLocals) => HtmlValue;
+  renderCondition?: (resLocals: UntypedResLocals) => boolean;
 }
 
 const sideNavPagesTabs = {
@@ -46,7 +48,7 @@ const sideNavPagesTabs = {
         ProgressCircle({
           value: navbarCompleteGettingStartedTasksCount,
           maxValue: navbarTotalGettingStartedTasksCount,
-          class: 'ms-auto',
+          className: 'ms-auto',
         }),
       renderCondition: ({ authz_data, course }) =>
         authz_data.has_course_permission_edit && course.show_getting_started,
@@ -73,7 +75,7 @@ const sideNavPagesTabs = {
       iconClasses: 'fas fa-bug',
       tabLabel: 'Issues',
       htmlSuffix: ({ navbarOpenIssueCount }) =>
-        IssueBadgeHtml({ count: navbarOpenIssueCount, suppressLink: true, class: 'ms-auto' }),
+        IssueBadgeHtml({ count: navbarOpenIssueCount, suppressLink: true, className: 'ms-auto' }),
     },
     {
       activePages: ['course_admin'],
@@ -126,8 +128,8 @@ const sideNavPagesTabs = {
       tabLabel: 'Gradebook',
     },
     {
-      activePages: ['instance_admin'],
-      activeSubPages: ['students'],
+      activePages: ['students'],
+      activeSubPages: ['overview', 'student_labels', 'detail'],
       urlSuffix: '/instance_admin/students',
       iconClasses: 'fas fa-users-line',
       tabLabel: 'Students',
@@ -150,7 +152,7 @@ const sideNavPagesTabs = {
     },
     {
       activePages: ['instance_admin'],
-      activeSubPages: ['settings', 'publishing', 'lti', 'billing'],
+      activeSubPages: ['settings', 'publishing', 'ai_grading', 'lti', 'billing'],
       urlSuffix: '/instance_admin/settings',
       iconClasses: 'fas fa-cog',
       tabLabel: 'Instance settings',
@@ -166,7 +168,7 @@ export function SideNav({
   sideNavExpanded,
   persistToggleState = true,
 }: {
-  resLocals: Record<string, any>;
+  resLocals: UntypedResLocals;
   page: NavPage;
   subPage: NavSubPage;
   sideNavExpanded: boolean;
@@ -196,15 +198,13 @@ export function SideNav({
       sideNavExpanded,
       persistToggleState,
     })}
-    ${resLocals.course_instance
-      ? CourseInstanceNav({
-          resLocals,
-          page,
-          subPage,
-          urlPrefix,
-          sideNavExpanded,
-        })
-      : ''}
+    ${CourseInstanceNav({
+      resLocals,
+      page,
+      subPage,
+      urlPrefix,
+      sideNavExpanded,
+    })}
   `;
 }
 
@@ -216,7 +216,7 @@ function CourseNav({
   sideNavExpanded,
   persistToggleState,
 }: {
-  resLocals: Record<string, any>;
+  resLocals: UntypedResLocals;
   page: NavPage;
   subPage: NavSubPage;
   urlPrefix: string;
@@ -256,7 +256,9 @@ function CourseNav({
           hx-trigger="mouseover once, focus once, show.bs.dropdown once delay:200ms"
           hx-target="#sideNavCourseDropdownContent"
         >
-          <span> ${resLocals.course.short_name} </span>
+          <span title="${resLocals.course.short_name}">
+            ${truncateMiddle(resLocals.course.short_name, 22)}
+          </span>
         </button>
         <div class="dropdown-menu py-0 overflow-hidden">
           <div
@@ -293,7 +295,7 @@ function CourseInstanceNav({
   urlPrefix,
   sideNavExpanded,
 }: {
-  resLocals: Record<string, any>;
+  resLocals: UntypedResLocals;
   page: NavPage;
   subPage: NavSubPage;
   urlPrefix: string;
@@ -320,7 +322,11 @@ function CourseInstanceNav({
             hx-trigger="mouseover once, focus once, show.bs.dropdown once delay:200ms"
             hx-target="#sideNavCourseInstancesDropdownContent"
           >
-            <span> ${resLocals.course_instance?.short_name ?? 'Select a course instance...'} </span>
+            <span title="${resLocals.course_instance?.short_name ?? ''}">
+              ${resLocals.course_instance
+                ? truncateMiddle(resLocals.course_instance.short_name, 22)
+                : 'Select...'}
+            </span>
           </button>
           <div class="dropdown-menu py-0 overflow-hidden">
             <div
@@ -361,7 +367,7 @@ function SideNavLink({
   urlPrefix,
   sideNavExpanded,
 }: {
-  resLocals: Record<string, any>;
+  resLocals: UntypedResLocals;
   navPage: NavPage;
   navSubPage: NavSubPage;
   tabInfo: SideNavTabInfo;

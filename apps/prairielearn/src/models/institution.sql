@@ -3,7 +3,7 @@ SELECT
   i.*
 FROM
   institutions AS i
-  JOIN pl_courses AS c ON (c.institution_id = i.id)
+  JOIN courses AS c ON (c.institution_id = i.id)
 WHERE
   c.id = $course_id;
 
@@ -12,7 +12,7 @@ SELECT
   i.*
 FROM
   institutions AS i
-  JOIN pl_courses AS c ON (c.institution_id = i.id)
+  JOIN courses AS c ON (c.institution_id = i.id)
   JOIN course_instances AS ci ON (ci.course_id = c.id)
 WHERE
   ci.id = $course_instance_id;
@@ -26,3 +26,21 @@ ORDER BY
   i.short_name,
   i.long_name,
   i.id;
+
+-- BLOCK insert_institution
+INSERT INTO
+  institutions (
+    long_name,
+    short_name,
+    display_timezone,
+    uid_regexp
+  )
+VALUES
+  (
+    $long_name,
+    $short_name,
+    $display_timezone,
+    $uid_regexp
+  )
+RETURNING
+  id;

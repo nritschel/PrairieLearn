@@ -1,25 +1,82 @@
+import { Ajv } from 'ajv';
 import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
 import { run } from '@prairielearn/run';
+import { assertNever } from '@prairielearn/utils';
+import { IdSchema } from '@prairielearn/zod';
 
 import { config } from '../../lib/config.js';
-import { IdSchema, SprocSyncAssessmentsSchema } from '../../lib/db-types.js';
+import { type AssessmentTool, SprocSyncAssessmentsSchema } from '../../lib/db-types.js';
 import { features } from '../../lib/features/index.js';
-import { assertNever } from '../../lib/types.js';
+import { extractDefaultPreferences } from '../../lib/question-preferences.js';
 import {
   type AssessmentJson,
+  EnumAssessmentToolSchema,
   type QuestionAlternativeJson,
+  type QuestionJson,
   type QuestionPointsJson,
-  type ZoneQuestionJson,
+  type QuestionPreferences,
+  type QuestionPreferencesSchemaJson,
+  QuestionPreferencesSchemaJsonSchema,
+  type ZoneQuestionBlockJson,
 } from '../../schemas/index.js';
-import { type CourseInstanceData } from '../course-db.js';
+import { type CourseInstanceData, convertLegacyGroupsToGroupsConfig } from '../course-db.js';
 import { isDateInFuture } from '../dates.js';
 import * as infofile from '../infofile.js';
 
 const sql = sqldb.loadSqlEquiv(import.meta.url);
 
 type AssessmentInfoFile = infofile.InfoFile<AssessmentJson>;
+
+interface MergePreferencesResult {
+  preferences: QuestionPreferences;
+  errors: string[];
+}
+
+function mergeAndValidatePreferences(
+  ajv: Ajv,
+  qid: string,
+  schema: QuestionPreferencesSchemaJson | null | undefined,
+  overrides: QuestionPreferences | undefined,
+): MergePreferencesResult {
+  const errors: string[] = [];
+  if (!schema) {
+    if (overrides && Object.keys(overrides).length > 0) {
+      errors.push(
+        `Question "${qid}" does not define a preferences schema, but preferences were provided in the assessment`,
+      );
+    }
+    return { preferences: {}, errors };
+  }
+
+  const merged: QuestionPreferences = { ...extractDefaultPreferences(schema), ...overrides };
+
+  const validate = ajv.compile({
+    type: 'object',
+    properties: schema,
+    additionalProperties: false,
+  });
+
+  const valid = validate(merged);
+
+  if (!valid && validate.errors) {
+    for (const error of validate.errors) {
+      const path = error.instancePath || '';
+      let message = `Question "${qid}": preferences${path} ${error.message}`;
+      if (error.keyword === 'enum' && error.params.allowedValues) {
+        message += `: ${error.params.allowedValues.join(', ')}`;
+      }
+      if (error.keyword === 'additionalProperties' && error.params.additionalProperty) {
+        message += `: "${error.params.additionalProperty}"`;
+      }
+
+      errors.push(message);
+    }
+  }
+
+  return { preferences: merged, errors };
+}
 
 /**
  * SYNCING PROCESS:
@@ -47,11 +104,13 @@ type AssessmentInfoFile = infofile.InfoFile<AssessmentJson>;
  *   j) Soft-delete unused assessment questions (from deleted assessments)
  *   k) Delete unused assessment access rules (from deleted assessments)
  *   l) Delete unused zones (from deletes assessments)
+ * 5. Sync assessment tools (assessment-level and zone-level)
  */
 
 function getParamsForAssessment(
   assessmentInfoFile: AssessmentInfoFile,
   questionIds: Record<string, any>,
+  enhancedAccessControlEnabled: boolean,
 ) {
   if (infofile.hasErrors(assessmentInfoFile)) return null;
   const assessment = assessmentInfoFile.data;
@@ -92,6 +151,7 @@ function getParamsForAssessment(
       number_choose: zone.numberChoose ?? null,
       max_points: zone.maxPoints,
       best_questions: zone.bestQuestions,
+      lockpoint: zone.lockpoint,
       advance_score_perc: zone.advanceScorePerc,
       allow_real_time_grading: zone.allowRealTimeGrading,
       grade_rate_minutes: zone.gradeRateMinutes,
@@ -103,9 +163,13 @@ function getParamsForAssessment(
 
   let alternativeGroupNumber = 0;
   let assessmentQuestionNumber = 0;
-  const allRoleNames = assessment.groupRoles.map((role) => role.name);
-  const assessmentCanView = assessment.canView.length > 0 ? assessment.canView : allRoleNames;
-  const assessmentCanSubmit = assessment.canSubmit.length > 0 ? assessment.canSubmit : allRoleNames;
+
+  const groups = assessment.groups ?? convertLegacyGroupsToGroupsConfig(assessment);
+  const allRoleNames = groups.roles.map((role) => role.name);
+  const assessmentCanView =
+    groups.rolePermissions.canView.length > 0 ? groups.rolePermissions.canView : allRoleNames;
+  const assessmentCanSubmit =
+    groups.rolePermissions.canSubmit.length > 0 ? groups.rolePermissions.canSubmit : allRoleNames;
   const alternativeGroups = assessment.zones.map((zone) => {
     const zoneGradeRateMinutes = zone.gradeRateMinutes ?? assessment.gradeRateMinutes ?? 0;
     const zoneAllowRealTimeGrading = zone.allowRealTimeGrading ?? assessment.allowRealTimeGrading;
@@ -122,8 +186,8 @@ function getParamsForAssessment(
         > & {
           qid: QuestionAlternativeJson['id'];
           allowRealTimeGrading: boolean;
-          canView: ZoneQuestionJson['canView'];
-          canSubmit: ZoneQuestionJson['canSubmit'];
+          canView: ZoneQuestionBlockJson['canView'];
+          canSubmit: ZoneQuestionBlockJson['canSubmit'];
           maxPoints: number | null;
           points: number | number[] | null;
           maxAutoPoints: number | null;
@@ -171,6 +235,7 @@ function getParamsForAssessment(
             jsonMaxPoints: alternative.maxPoints ?? null,
             jsonPoints: alternative.points ?? null,
             jsonTriesPerVariant: alternative.triesPerVariant ?? null,
+            preferences: alternative.preferences,
           };
         });
       } else if (question.id) {
@@ -203,6 +268,7 @@ function getParamsForAssessment(
             jsonMaxAutoPoints: question.maxAutoPoints ?? null,
             jsonPoints: question.points ?? null,
             jsonTriesPerVariant: question.triesPerVariant ?? null,
+            preferences: question.preferences,
           },
         ];
       }
@@ -252,6 +318,12 @@ function getParamsForAssessment(
       const questions = normalizedAlternatives.map((alternative, alternativeIndex) => {
         assessmentQuestionNumber++;
         const questionId = questionIds[alternative.qid];
+
+        // Preference validation has already been performed by
+        // preValidateAssessmentPreferences() before this function runs.
+        // If there were errors, getParamsForAssessment would have returned
+        // null early due to the hasErrors check at the top.
+
         return {
           number: assessmentQuestionNumber,
           has_split_points: alternative.hasSplitPoints,
@@ -287,6 +359,7 @@ function getParamsForAssessment(
           json_max_points: alternative.jsonMaxPoints,
           json_max_auto_points: alternative.jsonMaxAutoPoints,
           json_tries_per_variant: alternative.jsonTriesPerVariant,
+          preferences: alternative.preferences ?? null,
         };
       });
 
@@ -314,12 +387,15 @@ function getParamsForAssessment(
     });
   });
 
-  const groupRoles = assessment.groupRoles.map((role) => ({
+  const groupRoles = groups.roles.map((role) => ({
     role_name: role.name,
-    minimum: role.minimum,
-    maximum: role.maximum,
-    can_assign_roles: role.canAssignRoles,
+    minimum: role.minMembers,
+    maximum: role.maxMembers,
+    can_assign_roles: groups.rolePermissions.canAssignRoles.includes(role.name),
   }));
+
+  // If any errors were added during zone/question processing treat as error.
+  if (infofile.hasErrors(assessmentInfoFile)) return null;
 
   return {
     type: assessment.type,
@@ -348,20 +424,23 @@ function getParamsForAssessment(
     assessment_module_name: assessment.module,
     text: assessment.text,
     constant_question_value: assessment.constantQuestionValue,
-    group_work: assessment.groupWork,
-    group_max_size: assessment.groupMaxSize ?? null,
-    group_min_size: assessment.groupMinSize ?? null,
-    student_group_create: assessment.studentGroupCreate,
-    student_group_choose_name: assessment.studentGroupChooseName,
-    student_group_join: assessment.studentGroupJoin,
-    student_group_leave: assessment.studentGroupLeave,
+    team_work: groups.enabled,
+    group_max_size: groups.maxMembers ?? null,
+    group_min_size: groups.minMembers ?? null,
+    student_group_create: groups.studentPermissions.canCreateGroup,
+    student_group_choose_name: groups.studentPermissions.canNameGroup,
+    student_group_join: groups.studentPermissions.canJoinGroup,
+    student_group_leave: groups.studentPermissions.canLeaveGroup,
+
     advance_score_perc: assessment.advanceScorePerc,
     comment: assessment.comment,
-    has_roles: assessment.groupRoles.length > 0,
-    json_can_view: assessment.canView,
-    json_can_submit: assessment.canSubmit,
-    // TODO: This will be conditional based on the access control settings in the future.
-    modern_access_control: false,
+    has_roles: groupRoles.length > 0,
+    json_can_view: groups.rolePermissions.canView,
+    json_can_submit: groups.rolePermissions.canSubmit,
+    modern_access_control:
+      enhancedAccessControlEnabled &&
+      allowAccess.length === 0 &&
+      (assessment.accessControl?.length ?? 0) > 0,
     allowAccess,
     zones,
     alternativeGroups,
@@ -422,6 +501,7 @@ export async function sync(
   courseInstanceId: string,
   courseInstanceData: CourseInstanceData,
   questionIds: Record<string, any>,
+  enhancedAccessControlEnabled: boolean,
 ) {
   const assessments = courseInstanceData.assessments;
 
@@ -471,27 +551,174 @@ export async function sync(
   }
 
   const assessmentParams = Object.entries(assessments).map(([tid, assessment]) => {
+    const params = getParamsForAssessment(assessment, questionIds, enhancedAccessControlEnabled);
     return JSON.stringify([
       tid,
       assessment.uuid,
       infofile.stringifyErrors(assessment),
       infofile.stringifyWarnings(assessment),
-      getParamsForAssessment(assessment, questionIds),
+      params,
     ]);
   });
 
-  await sqldb.callRow(
-    'sync_assessments',
-    [assessmentParams, courseId, courseInstanceId, config.checkSharingOnSync],
-    SprocSyncAssessmentsSchema,
-  );
+  return await sqldb.runInTransactionAsync(async () => {
+    const { name_to_id_map } = await sqldb.callRow(
+      'sync_assessments',
+      [assessmentParams, courseId, courseInstanceId, config.checkSharingOnSync],
+      SprocSyncAssessmentsSchema,
+    );
+
+    await syncAssessmentTools(assessments, name_to_id_map);
+    return { name_to_id_map };
+  });
+}
+
+async function syncAssessmentTools(
+  assessments: CourseInstanceData['assessments'],
+  nameToIdMap: Record<string, string> | null,
+) {
+  interface AssessmentLevelToolRow {
+    assessment_id: AssessmentTool['assessment_id'];
+    zone_id?: never;
+    tool: AssessmentTool['tool'];
+    enabled: AssessmentTool['enabled'];
+    settings: AssessmentTool['settings'];
+  }
+
+  interface ZoneLevelToolRow {
+    zone_id: AssessmentTool['zone_id'];
+    assessment_id?: never;
+    tool: AssessmentTool['tool'];
+    enabled: AssessmentTool['enabled'];
+    settings: AssessmentTool['settings'];
+  }
+
+  const toolRows: (AssessmentLevelToolRow | ZoneLevelToolRow)[] = [];
+  const assessmentIds: string[] = [];
+  const assessmentsWithZoneTools: { assessmentId: string; zones: AssessmentJson['zones'] }[] = [];
+
+  for (const [tid, assessment] of Object.entries(assessments)) {
+    const assessmentId = nameToIdMap?.[tid];
+    if (!assessmentId) continue;
+
+    assessmentIds.push(assessmentId);
+
+    if (assessment.data?.tools) {
+      for (const [toolName, { enabled, ...settings }] of Object.entries(assessment.data.tools)) {
+        const tool = EnumAssessmentToolSchema.parse(toolName);
+        toolRows.push({
+          assessment_id: assessmentId,
+          tool,
+          enabled,
+          settings,
+        });
+      }
+    }
+
+    const zones = assessment.data?.zones;
+    if (!zones) continue;
+    if (zones.some((zone) => zone.tools)) {
+      assessmentsWithZoneTools.push({ assessmentId, zones });
+    }
+  }
+
+  const zoneRowsByAssessment = new Map<string, Map<number, { id: string; number: number }>>();
+  if (assessmentsWithZoneTools.length > 0) {
+    const allZoneRows = await sqldb.queryRows(
+      sql.select_zone_ids,
+      { assessment_ids: assessmentsWithZoneTools.map(({ assessmentId }) => assessmentId) },
+      z.object({ id: IdSchema, assessment_id: IdSchema, number: z.number() }),
+    );
+    for (const row of allZoneRows) {
+      let byNumber = zoneRowsByAssessment.get(row.assessment_id);
+      if (!byNumber) {
+        byNumber = new Map();
+        zoneRowsByAssessment.set(row.assessment_id, byNumber);
+      }
+      byNumber.set(row.number, row);
+    }
+  }
+
+  for (const { assessmentId, zones } of assessmentsWithZoneTools) {
+    const zoneRowsByNumber = zoneRowsByAssessment.get(assessmentId)!;
+
+    for (const [index, zone] of zones.entries()) {
+      if (!zone.tools) continue;
+
+      const zoneNumber = index + 1;
+      const zoneRow = zoneRowsByNumber.get(zoneNumber);
+      if (!zoneRow) {
+        throw new Error(
+          `Zone number ${zoneNumber} not found in database for assessment ID ${assessmentId}.`,
+        );
+      }
+
+      for (const [toolName, { enabled, ...settings }] of Object.entries(zone.tools)) {
+        const tool = EnumAssessmentToolSchema.parse(toolName);
+        toolRows.push({
+          zone_id: zoneRow.id,
+          tool,
+          enabled,
+          settings,
+        });
+      }
+    }
+  }
+
+  if (assessmentIds.length > 0) {
+    await sqldb.execute(sql.sync_assessment_tools, {
+      tools: JSON.stringify(toolRows),
+      assessment_ids: assessmentIds,
+    });
+  }
+}
+
+/**
+ * Pre-validates preferences for assessment questions and adds errors to the
+ * assessment infofile. Must be called before assessment sets are synced so that
+ * errors influence whether the "Unknown" fallback set is created.
+ */
+export function preValidateAssessmentPreferences(
+  assessments: CourseInstanceData['assessments'],
+  questions: Record<string, infofile.InfoFile<QuestionJson>>,
+  sharedQuestionPreferences: Record<string, QuestionPreferencesSchemaJson | null>,
+): void {
+  const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
+
+  for (const assessment of Object.values(assessments)) {
+    if (infofile.hasErrors(assessment) || !assessment.data) continue;
+    for (const zone of assessment.data.zones) {
+      for (const question of zone.questions) {
+        const validate = (qid: string, preferences: QuestionPreferences | undefined) => {
+          let schema: QuestionPreferencesSchemaJson | null;
+          if (qid.startsWith('@')) {
+            if (!(qid in sharedQuestionPreferences)) return; // Unknown QID; will be caught later
+            schema = sharedQuestionPreferences[qid];
+          } else {
+            if (!(qid in questions)) return; // Missing QID will be caught later during assessment sync
+            schema = questions[qid].data?.preferences ?? null;
+          }
+          const { errors } = mergeAndValidatePreferences(ajv, qid, schema, preferences);
+          infofile.addErrors(assessment, errors);
+        };
+
+        if (question.alternatives) {
+          for (const alt of question.alternatives) {
+            if (alt.id) validate(alt.id, alt.preferences);
+          }
+        } else if (question.id) {
+          validate(question.id, question.preferences);
+        }
+      }
+    }
+  }
 }
 
 export async function validateAssessmentSharedQuestions(
   courseId: string,
   assessments: CourseInstanceData['assessments'],
   questionIds: Record<string, string>,
-) {
+): Promise<Record<string, QuestionPreferencesSchemaJson | null>> {
   // A set of all imported question IDs.
   const importedQids = new Set<string>();
 
@@ -522,7 +749,7 @@ export async function validateAssessmentSharedQuestions(
   });
 
   if (importedQids.size > 0) {
-    const institutionId = await sqldb.queryRow(
+    const institutionId = await sqldb.queryScalar(
       sql.get_institution_id,
       { course_id: courseId },
       z.string(),
@@ -554,10 +781,18 @@ export async function validateAssessmentSharedQuestions(
           Array.from(importedQids, parseSharedQuestionReference),
         ),
       },
-      z.object({ sharing_name: z.string(), qid: z.string(), id: IdSchema }),
+      z.object({
+        sharing_name: z.string(),
+        qid: z.string(),
+        id: IdSchema,
+        preferences_schema: QuestionPreferencesSchemaJsonSchema.nullable(),
+      }),
     );
+    const sharedQuestionPreferences: Record<string, QuestionPreferencesSchemaJson | null> = {};
     for (const row of importedQuestions) {
-      questionIds['@' + row.sharing_name + '/' + row.qid] = row.id;
+      const fullQid = '@' + row.sharing_name + '/' + row.qid;
+      questionIds[fullQid] = row.id;
+      sharedQuestionPreferences[fullQid] = row.preferences_schema;
     }
     const missingQids = new Set(Array.from(importedQids).filter((qid) => !(qid in questionIds)));
     if (config.checkSharingOnSync) {
@@ -573,5 +808,7 @@ export async function validateAssessmentSharedQuestions(
         }
       }
     }
+    return sharedQuestionPreferences;
   }
+  return {};
 }

@@ -76,9 +76,9 @@ describe(
       const user = await selectUserByUid('student@example.com');
       const courseInstance = await selectCourseInstanceById('1');
       await ensureUncheckedEnrollment({
-        userId: user.user_id,
+        userId: user.id,
         courseInstance,
-        requestedRole: 'System',
+        requiredRole: ['System'],
         authzData: dangerousFullSystemAuthz(),
         actionDetail: 'implicit_joined',
       });
@@ -184,7 +184,7 @@ describe(
       context.__csrf_token = response.$('span[id=test_csrf_token]').text();
       const questionWithVariantPath = response.$('a:contains("Question 1")').attr('href');
       const questionWithoutVariantPath = response.$('a:contains("Question 2")').attr('href');
-      const questionWithWorkspace = response.$('a:contains("Question 7")').attr('href');
+      const questionWithWorkspace = response.$('a:contains("Question 6")').attr('href');
       context.examQuestionUrl = `${context.siteUrl}${questionWithVariantPath}`;
       context.examQuestionWithoutVariantUrl = `${context.siteUrl}${questionWithoutVariantPath}`;
       context.examQuestionWithWorkspaceUrl = `${context.siteUrl}${questionWithWorkspace}`;
@@ -212,7 +212,7 @@ describe(
     });
 
     test.sequential('count number of variants generated', async () => {
-      context.numberOfVariants = await sqldb.queryRow(
+      context.numberOfVariants = await sqldb.queryScalar(
         sql.count_variants,
         { assessment_instance_id: helperClient.parseAssessmentInstanceId(context.examInstanceUrl) },
         z.number(),
@@ -343,7 +343,7 @@ describe(
     });
 
     test.sequential('ensure that no new variants have been created', async () => {
-      const countVariantsResult = await sqldb.queryRow(
+      const countVariantsResult = await sqldb.queryScalar(
         sql.count_variants,
         { assessment_instance_id: helperClient.parseAssessmentInstanceId(context.examInstanceUrl) },
         z.number(),
@@ -436,7 +436,7 @@ describe(
     });
 
     test.sequential('count number of variants generated', async () => {
-      context.numberOfVariants = await sqldb.queryRow(
+      context.numberOfVariants = await sqldb.queryScalar(
         sql.count_variants,
         { assessment_instance_id: helperClient.parseAssessmentInstanceId(context.hwInstanceUrl) },
         z.number(),
@@ -486,7 +486,7 @@ describe(
     );
 
     test.sequential('ensure that no new variants have been created', async () => {
-      const countVariantsResult = await sqldb.queryRow(
+      const countVariantsResult = await sqldb.queryScalar(
         sql.count_variants,
         { assessment_instance_id: helperClient.parseAssessmentInstanceId(context.hwInstanceUrl) },
         z.number(),
@@ -561,7 +561,7 @@ describe(
     test.sequential(
       'check that no credit is received for an answer submitted when active is false',
       async () => {
-        const points = await sqldb.queryRow(
+        const points = await sqldb.queryScalar(
           sql.read_assessment_instance_points,
           { assessment_id: context.hwId },
           z.number(),
@@ -691,7 +691,7 @@ describe(
     });
 
     test.sequential('check that no files or text were attached', async () => {
-      const numberOfFiles = await sqldb.queryRow(
+      const numberOfFiles = await sqldb.queryScalar(
         sql.get_attached_files,
         { assessment_id: context.hwId },
         z.number(),

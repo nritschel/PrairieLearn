@@ -11,6 +11,7 @@ import { afterAll, assert, beforeAll, describe, it } from 'vitest';
 import { config } from '../lib/config.js';
 import type { Course, Question, Submission, Variant } from '../lib/db-types.js';
 import { EXAMPLE_COURSE_PATH } from '../lib/paths.js';
+import { extractDefaultPreferences } from '../lib/question-preferences.js';
 import { buildQuestionUrls } from '../lib/question-render.js';
 import { makeVariant } from '../lib/question-variant.js';
 import * as questionServers from '../question-servers/index.js';
@@ -108,6 +109,10 @@ const validateHtml = async (html: string) => {
       // https://html-validate.org/rules/prefer-tbody.html
       // pygments with linenos="table" generates <tr> elements without a wrapping <tbody> tag
       'prefer-tbody': 'off',
+
+      // https://html-validate.org/rules/prefer-native-element.html
+      // pl-order-blocks uses role="listbox" for drag-and-drop selection which cannot use native <select>
+      'prefer-native-element': ['error', { exclude: ['listbox'] }],
 
       // False positive, since this attribute is controlled via JS. https://getbootstrap.com/docs/5.3/components/modal/#accessibility
       // https://html-validate.org/rules/hidden-focusable.html
@@ -286,20 +291,22 @@ describe('Internally graded question lifecycle tests', { timeout: 60_000 }, func
         context.skip();
       }
       const question = {
-        options: info.options ?? {}, // Use options from info.json if available
+        options: info.options ?? {},
+        preferences_schema: info.preferences ?? null,
         directory: relativePath,
         type: 'Freeform',
       } as unknown as Question;
 
+      // Extract default preferences from info.json preferences schema
+      const preferences = info.preferences ? extractDefaultPreferences(info.preferences) : {};
+
       // Prepare and generate
-      const { courseIssues: prepareGenerateIssues, variant: rawVariant } = await makeVariant(
+      const { courseIssues: prepareGenerateIssues, variant: rawVariant } = await makeVariant({
         question,
         course,
-        {
-          variant_seed: null,
-        },
-      );
-
+        variant_seed: null,
+        preferences,
+      });
       assert.isEmpty(prepareGenerateIssues, 'Prepare/Generate should not produce any issues');
 
       const variant = rawVariant as Variant;
@@ -320,19 +327,19 @@ describe('Internally graded question lifecycle tests', { timeout: 60_000 }, func
       const {
         courseIssues: renderIssues,
         data: { questionHtml },
-      } = await questionModule.render(
-        {
+      } = await questionModule.render({
+        renderSelection: {
           question: true,
           submissions: false,
           answer: false,
         },
         variant,
         question,
-        null /* submission */,
-        [] /* submissions */,
+        submission: null,
+        submissions: [],
         course,
         locals,
-      );
+      });
       assert.isEmpty(renderIssues, 'Render should not produce any issues');
 
       // Validate HTML

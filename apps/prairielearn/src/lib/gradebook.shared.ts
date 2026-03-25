@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { IdSchema } from '@prairielearn/zod';
+
 import {
   RawStaffAssessmentInstanceSchema,
   RawStaffAssessmentSchema,
@@ -15,8 +17,14 @@ const StudentGradebookRowSchema = z
     assessment_instance: RawStudentAssessmentInstanceSchema__UNSAFE,
     assessment_set: RawStudentAssessmentSetSchema,
     show_closed_assessment_score: z.boolean(),
+    modern_access_control: z.boolean(),
+    assessment_id: IdSchema,
   })
   .transform((data) => {
+    // TODO: Instead of doing a single parse from the database,
+    // we should return the raw data from the database, and parse that data
+    // again with additional authorization context to narrow the return type.
+
     if (!data.show_closed_assessment_score) {
       data.assessment_instance.points = null;
       data.assessment_instance.score_perc = null;
@@ -31,6 +39,8 @@ const StaffGradebookRowSchema = z
     assessment_instance: RawStaffAssessmentInstanceSchema,
     assessment_set: RawStaffAssessmentSetSchema,
     show_closed_assessment_score: z.boolean(),
+    modern_access_control: z.boolean(),
+    assessment_id: IdSchema,
   })
   .brand('StaffGradebookRow');
 

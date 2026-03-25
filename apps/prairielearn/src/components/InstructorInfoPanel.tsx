@@ -1,15 +1,14 @@
 import { formatDate, formatInterval } from '@prairielearn/formatter';
 import { type HtmlValue, html } from '@prairielearn/html';
+import { DateFromISOString, IntervalSchema } from '@prairielearn/zod';
 
 import {
   type Assessment,
   type AssessmentInstance,
   type Course,
   type CourseInstance,
-  DateFromISOString,
   type Group,
   type InstanceQuestion,
-  IntervalSchema,
   type Question,
   type User,
   type Variant,
@@ -123,16 +122,19 @@ function InstanceUserInfo({
   return html`
     <div>
       <details>
+        <summary>
+          <h3 class="card-title ${instance_group != null ? 'h5' : 'd-inline-block h5 mb-0'}">
+            ${instance_group != null ? 'Group details' : 'Student details'}
+          </h3>
+        </summary>
         ${instance_group != null
           ? html`
-              <summary><h3 class="card-title h5">Group details</h3></summary>
               <div class="d-flex flex-wrap">
                 <div class="pe-1">${instance_group.name}</div>
                 <div class="pe-1">(${instance_group_uid_list?.join(', ')})</div>
               </div>
             `
           : html`
-              <summary><h3 class="card-title d-inline-block h5 mb-0">Student details</h3></summary>
               <div class="d-flex flex-wrap mt-2">
                 <div class="pe-1">${instance_user?.name}</div>
                 <div class="pe-1">${instance_user?.uid}</div>
@@ -206,10 +208,14 @@ function QuestionInfo({
           </div>
         `
       : ''}
-    <div class="d-flex flex-wrap">
-      <div class="pe-1">Title:</div>
-      <div>${question.title}</div>
-    </div>
+    ${question.title?.trim()
+      ? html`
+          <div class="d-flex flex-wrap">
+            <div class="pe-1">Title:</div>
+            <div>${question.title}</div>
+          </div>
+        `
+      : ''}
   `;
 }
 
@@ -281,7 +287,7 @@ function AssessmentInstanceInfo({
   return html`
     <h3 class="card-title h5">Assessment instance</h3>
     <div class="d-flex flex-wrap">
-      <div class="pe-1">AID:</div>
+      <div class="pe-1">Assessment:</div>
       <div>
         <a href="${instructorUrlPrefix}/assessment/${assessment.id}">${assessment.tid}</a>
       </div>

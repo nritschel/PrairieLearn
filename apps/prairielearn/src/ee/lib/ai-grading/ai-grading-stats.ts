@@ -2,23 +2,20 @@ import assert from 'node:assert';
 
 import { z } from 'zod';
 
-import { loadSqlEquiv, queryOptionalRow, queryRows } from '@prairielearn/postgres';
-import { DateFromISOString } from '@prairielearn/zod';
+import { loadSqlEquiv, queryOptionalScalar, queryRows } from '@prairielearn/postgres';
+import { DateFromISOString, IdSchema } from '@prairielearn/zod';
 
 import { selectAssessmentQuestions } from '../../../lib/assessment-question.js';
 import {
   type Assessment,
   type AssessmentQuestion,
-  IdSchema,
   type RubricItem,
   RubricItemSchema,
 } from '../../../lib/db-types.js';
+import { selectCompleteRubric } from '../../../models/rubrics.js';
 import { selectInstanceQuestionGroups } from '../ai-instance-question-grouping/ai-instance-question-grouping-util.js';
 
-import {
-  selectInstanceQuestionsForAssessmentQuestion,
-  selectRubricForGrading,
-} from './ai-grading-util.js';
+import { selectInstanceQuestionsForAssessmentQuestion } from './ai-grading-util.js';
 import type { AiGradingGeneralStats, WithAIGradingStats } from './types.js';
 
 const sql = loadSqlEquiv(import.meta.url);
@@ -62,7 +59,7 @@ export async function fillInstanceQuestionColumnEntries<
   rows: T[],
   assessment_question: AssessmentQuestion,
 ): Promise<FillInstanceQuestionColumnEntriesResultType<T>[]> {
-  const rubric_modify_time = await queryOptionalRow(
+  const rubric_modify_time = await queryOptionalScalar(
     sql.select_rubric_time,
     { rubric_id: assessment_question.manual_rubric_id },
     DateFromISOString,
@@ -74,7 +71,7 @@ export async function fillInstanceQuestionColumnEntries<
     await selectInstanceQuestionGroups({
       assessmentQuestionId: assessment_question.id,
     })
-  ).reduce((acc, curr) => {
+  ).reduce<Record<string, string>>((acc, curr) => {
     acc[curr.id] = curr.instance_question_group_name;
     return acc;
   }, {});
@@ -125,7 +122,8 @@ export async function fillInstanceQuestionColumnEntries<
       const manualItems = manualGradingJob.rubric_items;
       const aiItems = aiGradingJob.rubric_items;
 
-      const allRubricItems = await selectRubricForGrading(assessment_question.id);
+      const { rubric_items: allRubricItems } = await selectCompleteRubric(assessment_question.id);
+
       const tpItems = manualItems
         .filter((item) => rubricListIncludes(aiItems, item))
         .map((item) => ({ ...item, true_positive: true }));
@@ -164,7 +162,8 @@ export async function calculateAiGradingStats(
   const instance_questions = await selectInstanceQuestionsForAssessmentQuestion({
     assessment_question_id: assessment_question.id,
   });
-  const rubric_items = await selectRubricForGrading(assessment_question.id);
+
+  const { rubric_items } = await selectCompleteRubric(assessment_question.id);
 
   const gradingJobMapping = await selectGradingJobsInfo(instance_questions);
 
@@ -245,7 +244,7 @@ function rubricListIncludes(items: RubricItem[], itemToCheck: RubricItem): boole
   return items.some((item) => item.id === itemToCheck.id);
 }
 
-export function rubricItemDisagreementCount(
+function rubricItemDisagreementCount(
   testRubricResults: {
     reference_items: Set<string>;
     ai_items: Set<string>;
@@ -264,7 +263,7 @@ export function rubricItemDisagreementCount(
   return disagreement;
 }
 
-export function meanError(actual: number[], predicted: number[]): number {
+function meanError(actual: number[], predicted: number[]): number {
   if (actual.length !== predicted.length || actual.length === 0) {
     throw new Error('Both arrays must have the same nonzero length.');
   }

@@ -5,10 +5,10 @@ import { afterAll, assert, beforeAll, describe, it } from 'vitest';
 import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
 
 import { config } from '../lib/config.js';
-import { AssessmentInstanceSchema, GroupConfigSchema, IdSchema } from '../lib/db-types.js';
-import { TEST_COURSE_PATH } from '../lib/paths.js';
+import { AssessmentInstanceSchema, GroupConfigSchema } from '../lib/db-types.js';
 import { generateAndEnrollUsers } from '../models/enrollment.js';
 
 import { assertAlert, fetchCheerio } from './helperClient.js';
@@ -30,7 +30,7 @@ describe('Group based homework assess control on student side', { timeout: 20_00
     storedConfig.authUin = config.authUin;
   });
 
-  beforeAll(helperServer.before(TEST_COURSE_PATH));
+  beforeAll(helperServer.before());
 
   afterAll(helperServer.after);
 
@@ -40,7 +40,7 @@ describe('Group based homework assess control on student side', { timeout: 20_00
 
   describe('1. the database', function () {
     it('should contain a group-based homework assessment', async () => {
-      const assessment_ids = await sqldb.queryRows(sql.select_group_work_assessment, IdSchema);
+      const assessment_ids = await sqldb.queryScalars(sql.select_group_work_assessment, IdSchema);
       assert.lengthOf(assessment_ids, 2);
       assert.isDefined(assessment_ids[0]);
       assert.isDefined(assessment_ids[1]);
@@ -469,7 +469,7 @@ describe('Group based homework assess control on student side', { timeout: 20_00
       locals.assessment_instance_id = result.id;
       locals.assessmentInstanceURL =
         locals.courseInstanceUrl + '/assessment_instance/' + locals.assessment_instance_id;
-      assert.equal(result.group_id, '1');
+      assert.equal(result.team_id, '1');
     });
   });
 

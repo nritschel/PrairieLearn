@@ -1,4 +1,4 @@
-import { renderHtml } from '@prairielearn/preact';
+import { renderHtml } from '@prairielearn/react';
 
 import { type AssessmentInstanceUrlParts, getAssessmentInstanceUrl } from '../lib/client/url.js';
 
@@ -14,7 +14,7 @@ export function AssessmentBadge({
   publicURL?: boolean;
 } & AssessmentInstanceUrlParts) {
   if (hideLink) {
-    return <span class={`badge color-${assessment.color}`}>{assessment.label}</span>;
+    return <span className={`badge color-${assessment.color}`}>{assessment.label}</span>;
   }
 
   const link = getAssessmentInstanceUrl(
@@ -33,7 +33,7 @@ export function AssessmentBadge({
   );
 
   return (
-    <a href={link} class={`btn btn-badge color-${assessment.color}`}>
+    <a href={link} className={`btn btn-badge color-${assessment.color}`}>
       {assessment.label}
     </a>
   );
@@ -68,42 +68,4 @@ export function AssessmentBadgeHtml({
       publicURL={publicURL}
     />,
   );
-}
-
-export function AssessmentBadgeList({
-  assessments,
-  hideLink = false,
-  urlPrefix,
-  courseInstanceId,
-  publicURL = false,
-}: {
-  assessments: { assessment_id: string; color: string; label: string }[];
-  hideLink?: boolean;
-  publicURL?: boolean;
-} & (
-  | {
-      urlPrefix: string;
-      courseInstanceId?: undefined;
-    }
-  | { urlPrefix?: undefined; courseInstanceId: string }
-)) {
-  return assessments.map((assessment) => (
-    <div key={assessment.assessment_id} class="d-inline-block me-1">
-      {urlPrefix === undefined ? (
-        <AssessmentBadge
-          assessment={assessment}
-          hideLink={hideLink}
-          courseInstanceId={courseInstanceId}
-          publicURL={publicURL}
-        />
-      ) : (
-        <AssessmentBadge
-          assessment={assessment}
-          hideLink={hideLink}
-          urlPrefix={urlPrefix}
-          publicURL={publicURL}
-        />
-      )}
-    </div>
-  ));
 }

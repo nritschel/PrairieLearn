@@ -1,5 +1,36 @@
 # @prairielearn/session
 
+## 4.0.2
+
+### Patch Changes
+
+- 3c4799a: Upgrade all JavaScript dependencies
+- 373afc1: Pin Express 4-era dependencies to current major versions
+
+## 4.0.1
+
+### Patch Changes
+
+- 8bdf6ea: Upgrade all JavaScript dependencies
+
+## 4.0.0
+
+### Major Changes
+
+- 3914bb4: Upgrade to Node 24
+
+## 3.0.26
+
+### Patch Changes
+
+- 0900843: Switch to the `tsgo` compiler
+
+## 3.0.25
+
+### Patch Changes
+
+- 70a8029: Upgrade all JavaScript dependencies
+
 ## 3.0.24
 
 ### Patch Changes

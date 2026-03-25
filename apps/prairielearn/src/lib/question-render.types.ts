@@ -24,7 +24,7 @@ export const IssueRenderDataSchema = IssueSchema.extend({
   user_email: z.string().nullable(),
 });
 
-type IssueRenderData = z.infer<typeof IssueRenderDataSchema>;
+export type IssueRenderData = z.infer<typeof IssueRenderDataSchema>;
 
 export interface QuestionUrls {
   questionUrl: string;
@@ -61,6 +61,7 @@ export interface ResLocalsQuestionRenderAdded extends QuestionUrls {
 
 export interface ResLocalsInstanceQuestionRenderAdded {
   rubric_data: RubricData | null;
+  allowGradeLeftMs: number;
 }
 
 export interface ResLocalsBuildLocals {
@@ -78,6 +79,7 @@ export interface ResLocalsBuildLocals {
   variantAttemptsTotal: number;
   submissions: SubmissionForRender[];
   variantToken: string;
+  jobSequenceTokens: Record<string, string>;
 }
 
 export type ResLocalsQuestionRender = ResLocalsBuildLocals & ResLocalsQuestionRenderAdded;

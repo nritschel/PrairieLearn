@@ -12,7 +12,7 @@ const TEST_USER = {
   email: 'test@illinois.edu',
   institution_id: '1',
   uin: '123456789',
-  user_id: '1',
+  id: '1',
 };
 
 const TEST_INSTITUTION = {
@@ -32,7 +32,6 @@ const createBaseContext = (overrides: Record<string, any> = {}) => ({
   authn_is_administrator: false,
   is_administrator: false,
   is_institution_administrator: false,
-  news_item_notification_count: 0,
   navPage: 'home' as const,
   access_as_administrator: false,
   authn_user: TEST_USER,
@@ -103,12 +102,14 @@ const createStudentAuthzData = (overrides: Record<string, any> = {}) => ({
 const STUDENT_COURSE_INSTANCE = {
   assessments_group_by: 'Set' as const,
   course_id: '1',
+  credit_non_transferable_milli_dollars: 0,
+  credit_transferable_milli_dollars: 0,
   deleted_at: null,
   display_timezone: 'America/Chicago',
-  hide_in_enroll_page: false,
   id: '1',
   long_name: 'Example Student Course Instance',
   short_name: 'Example Student Course',
+  modern_publishing: false,
   publishing_end_date: null,
   publishing_start_date: null,
 };
@@ -128,12 +129,12 @@ const STUDENT_COURSE = {
 const mockStudentData = {
   course_instance: STUDENT_COURSE_INSTANCE,
   course: STUDENT_COURSE,
-  has_enhanced_navigation: false,
 };
 
 const mockInstructorData = {
   course_instance: {
     ...STUDENT_COURSE_INSTANCE,
+    ai_grading_use_custom_api_keys: false,
     enrollment_code: 'AAABBBDDDD',
     enrollment_limit: 10,
     json_comment: 'foo',
@@ -167,7 +168,6 @@ const mockInstructorData = {
     show_getting_started: false,
   },
   institution: TEST_INSTITUTION,
-  has_enhanced_navigation: false,
 };
 
 const STAFF_ASSESSMENT_SET = {
@@ -199,7 +199,7 @@ const STAFF_ASSESSMENT = {
   duration_stat_median: '00:30:00',
   duration_stat_min: '00:10:00',
   duration_stat_thresholds: [],
-  group_work: false,
+  team_work: false,
   honor_code: null,
   id: '1',
   json_allow_real_time_grading: true,
@@ -297,6 +297,7 @@ const STAFF_ASSESSMENT_QUESTION = {
   number_submissions_hist: [1, 2, 3, 4],
   number_submissions_variance: 2,
   points_list: [0, 50, 100],
+  preferences: null,
   question_id: '1',
   question_score_variance: 20,
   quintile_question_scores: [60, 70, 80, 90, 100],
@@ -325,7 +326,6 @@ const STAFF_QUESTION = {
   directory: 'questions/question1',
   draft: false,
   external_grading_enable_networking: null,
-  external_grading_enabled: null,
   external_grading_entrypoint: null,
   external_grading_environment: {},
   external_grading_files: null,
@@ -338,6 +338,8 @@ const STAFF_QUESTION = {
   json_workspace_comment: null,
   number: 1,
   options: null,
+  preferences: null,
+  preferences_schema: null,
   partial_credit: true,
   qid: 'question1',
   share_publicly: false,
@@ -504,7 +506,6 @@ describe('extractPageContext with courseInstance pageType', () => {
     const studentDataWithExtra = {
       course_instance: { ...mockStudentData.course_instance, extra: 'field' },
       course: { ...mockStudentData.course, another: 'field' },
-      has_enhanced_navigation: false,
       ...createBaseContext(),
       authz_data: createStudentAuthzData(),
     };
@@ -522,7 +523,6 @@ describe('extractPageContext with courseInstance pageType', () => {
       course_instance: { ...mockInstructorData.course_instance, extra: 'field' },
       course: { ...mockInstructorData.course, another: 'field' },
       institution: { ...mockInstructorData.institution, extra: 'field' },
-      has_enhanced_navigation: false,
       ...createBaseContext({ navbarType: 'instructor' }),
       authz_data: createInstructorAuthzData(),
     };

@@ -3,22 +3,38 @@ import assert from 'node:assert';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { type OpenAIResponsesProviderOptions, createOpenAI } from '@ai-sdk/openai';
-import { generateObject } from 'ai';
+import {
+  type GenerateObjectResult,
+  type JSONParseError,
+  type TypeValidationError,
+  generateObject,
+} from 'ai';
 import * as async from 'async';
+import mustache from 'mustache';
 import { z } from 'zod';
 
 import * as error from '@prairielearn/error';
-import { loadSqlEquiv, queryRow, runInTransactionAsync } from '@prairielearn/postgres';
+import { loadSqlEquiv, queryScalar, runInTransactionAsync } from '@prairielearn/postgres';
 import { run } from '@prairielearn/run';
+import { assertNever } from '@prairielearn/utils';
+import { IdSchema } from '@prairielearn/zod';
 
-import { logResponseUsage } from '../../../lib/ai.js';
+import {
+  calculateCostWithFeeMilliDollars,
+  formatMilliDollars,
+} from '../../../lib/ai-grading-credits.js';
+import {
+  type AiImageGradingResponses,
+  calculateResponseCost,
+  logResponseUsage,
+  logResponsesUsage,
+} from '../../../lib/ai-util.js';
 import { config } from '../../../lib/config.js';
 import {
   type Assessment,
   type AssessmentQuestion,
   type Course,
   type CourseInstance,
-  IdSchema,
   type InstanceQuestion,
   type Question,
 } from '../../../lib/db-types.js';
@@ -26,29 +42,123 @@ import * as manualGrading from '../../../lib/manualGrading.js';
 import { buildQuestionUrls } from '../../../lib/question-render.js';
 import { getQuestionCourse } from '../../../lib/question-variant.js';
 import { createServerJob } from '../../../lib/server-jobs.js';
-import { assertNever } from '../../../lib/types.js';
+import { emitServerJobProgressUpdate } from '../../../lib/serverJobProgressSocket.js';
+import { JobItemStatus } from '../../../lib/serverJobProgressSocket.shared.js';
+import {
+  deductCreditsForAiGrading,
+  selectCreditPool,
+} from '../../../models/ai-grading-credit-pool.js';
+import { updateCourseInstanceUsagesForAiGradingResponses } from '../../../models/course-instance-usages.js';
+import { selectCompleteRubric } from '../../../models/rubrics.js';
 import * as questionServers from '../../../question-servers/index.js';
 
+import { resolveAiGradingKeys } from './ai-grading-credentials.js';
 import { AI_GRADING_MODEL_PROVIDERS, type AiGradingModelId } from './ai-grading-models.shared.js';
 import { selectGradingJobsInfo } from './ai-grading-stats.js';
 import {
+  addAiGradingCostToIntervalUsage,
   containsImageCapture,
+  correctGeminiMalformedRubricGradingJson,
+  correctImagesOrientation,
+  extractSubmissionImages,
   generatePrompt,
-  generateSubmissionEmbedding,
+  getIntervalUsage,
   insertAiGradingJob,
+  insertAiGradingJobWithRotationCorrection,
   parseAiRubricItems,
-  selectClosestSubmissionInfo,
-  selectEmbeddingForSubmission,
   selectInstanceQuestionsForAssessmentQuestion,
-  selectLastSubmissionId,
   selectLastVariantAndSubmission,
-  selectRubricForGrading,
 } from './ai-grading-util.js';
-import type { AIGradingLog, AIGradingLogger } from './types.js';
+import {
+  type AIGradingLog,
+  type AIGradingLogger,
+  HandwritingOrientationsOutputSchema,
+} from './types.js';
 
 const sql = loadSqlEquiv(import.meta.url);
 
+/**
+ * Calculate the total cost in milli-dollars (with infrastructure fee) for all
+ * responses from a single grading operation.
+ */
+function calculateTotalGradingCostMilliDollars({
+  model_id,
+  gradingResponseWithRotationIssue,
+  rotationCorrections,
+  finalGradingResponse,
+}: {
+  model_id: AiGradingModelId;
+  gradingResponseWithRotationIssue?: GenerateObjectResult<any>;
+  rotationCorrections?: Record<string, { response: GenerateObjectResult<any> }>;
+  finalGradingResponse: GenerateObjectResult<any>;
+}): number {
+  let totalRawCost = calculateResponseCost({ model: model_id, usage: finalGradingResponse.usage });
+  if (gradingResponseWithRotationIssue) {
+    totalRawCost += calculateResponseCost({
+      model: model_id,
+      usage: gradingResponseWithRotationIssue.usage,
+    });
+  }
+  if (rotationCorrections) {
+    for (const correction of Object.values(rotationCorrections)) {
+      totalRawCost += calculateResponseCost({
+        model: model_id,
+        usage: correction.response.usage,
+      });
+    }
+  }
+  return calculateCostWithFeeMilliDollars(totalRawCost, config.aiGradingInfrastructureFeePercent);
+}
+
+/**
+ * If cost tracking is enabled, calculate the total grading cost and deduct
+ * credits for a single AI grading operation. Must be called inside the same
+ * transaction that inserts the grading job.
+ */
+async function deductAiGradingCostIfNeeded({
+  trackRateLimitAndCost,
+  model_id,
+  gradingResponseWithRotationIssue,
+  rotationCorrections,
+  finalGradingResponse,
+  course_instance_id,
+  user_id,
+  ai_grading_job_id,
+  assessment_question_id,
+  instance_question_id,
+}: {
+  trackRateLimitAndCost: boolean;
+  model_id: AiGradingModelId;
+  gradingResponseWithRotationIssue?: GenerateObjectResult<any>;
+  rotationCorrections?: Record<string, { response: GenerateObjectResult<any> }>;
+  finalGradingResponse: GenerateObjectResult<any>;
+  course_instance_id: string;
+  user_id: string;
+  ai_grading_job_id: string;
+  assessment_question_id: string;
+  instance_question_id: string;
+}): Promise<void> {
+  if (!trackRateLimitAndCost) return;
+
+  const costMilliDollars = calculateTotalGradingCostMilliDollars({
+    model_id,
+    gradingResponseWithRotationIssue,
+    rotationCorrections,
+    finalGradingResponse,
+  });
+  await deductCreditsForAiGrading({
+    course_instance_id,
+    cost_milli_dollars: costMilliDollars,
+    user_id,
+    ai_grading_job_id,
+    assessment_question_id,
+    reason: `AI graded instance question ${instance_question_id}`,
+  });
+}
+
 const PARALLEL_SUBMISSION_GRADING_LIMIT = 20;
+const HOURLY_USAGE_CAP_REACHED_MESSAGE = 'Hourly usage cap reached. Try again later.';
+const INSUFFICIENT_CREDITS_MESSAGE = 'Insufficient AI grading credits.';
 
 /**
  * Grade instance questions using AI.
@@ -85,128 +195,161 @@ export async function aiGrade({
   instance_question_ids?: string[];
   model_id: AiGradingModelId;
 }): Promise<string> {
+  if (!assessment_question.max_manual_points) {
+    throw new error.HttpStatusError(
+      400,
+      'AI grading is only available on assessment questions that use manual grading.',
+    );
+  }
+
   const provider = AI_GRADING_MODEL_PROVIDERS[model_id];
-  const { model, embeddingModel } = run(() => {
+  const resolvedKeys = await resolveAiGradingKeys(course_instance);
+
+  const model = run(() => {
     if (provider === 'openai') {
-      // If an OpenAI API Key and Organization are not provided, throw an error
-      if (!config.aiGradingOpenAiApiKey || !config.aiGradingOpenAiOrganization) {
+      if (!resolvedKeys.openai) {
         throw new error.HttpStatusError(403, 'Model not available (OpenAI API key not provided)');
       }
-      const openai = createOpenAI({
-        apiKey: config.aiGradingOpenAiApiKey,
-        organization: config.aiGradingOpenAiOrganization,
-      });
-      return {
-        embeddingModel: openai.textEmbeddingModel('text-embedding-3-small'),
-        model: openai(model_id),
-      };
+      return createOpenAI({
+        apiKey: resolvedKeys.openai.apiKey,
+        organization: resolvedKeys.openai.organization ?? undefined,
+      })(model_id);
     } else if (provider === 'google') {
-      // If a Google API Key is not provided, throw an error
-      if (!config.aiGradingGoogleApiKey) {
+      if (!resolvedKeys.google) {
         throw new error.HttpStatusError(403, 'Model not available (Google API key not provided)');
       }
-      const google = createGoogleGenerativeAI({
-        apiKey: config.aiGradingGoogleApiKey,
-      });
-      return {
-        // TODO: Add support for generating embeddings with Google Generative AI.
-        // We did not add it yet since Gemini models will be primarily tested
-        // with image submissions, which we do not support for RAG.
-        embeddingModel: null,
-        model: google(model_id),
-      };
+      return createGoogleGenerativeAI({
+        apiKey: resolvedKeys.google.apiKey,
+      })(model_id);
     } else {
-      // If an Anthropic API Key is not provided, throw an error
-      if (!config.aiGradingAnthropicApiKey) {
+      if (!resolvedKeys.anthropic) {
         throw new error.HttpStatusError(
           403,
           'Model not available (Anthropic API key not provided)',
         );
       }
-      const anthropic = createAnthropic({
-        apiKey: config.aiGradingAnthropicApiKey,
-      });
-      return {
-        // TODO: Add support for generating embeddings with Anthropic AI.
-        // We did not add it yet since Claude models will be primarily tested
-        // with image submissions, which we do not support for RAG.
-        embeddingModel: null,
-        model: anthropic(model_id),
-      };
+      return createAnthropic({
+        apiKey: resolvedKeys.anthropic.apiKey,
+      })(model_id);
     }
   });
 
   const question_course = await getQuestionCourse(question, course);
 
   const serverJob = await createServerJob({
+    type: 'ai_grading',
+    description: 'Perform AI grading',
+    userId: user_id,
+    authnUserId: authn_user_id,
     courseId: course.id,
     courseInstanceId: course_instance.id,
     assessmentId: assessment.id,
-    authnUserId: authn_user_id,
-    userId: user_id,
-    type: 'ai_grading',
-    description: 'Perform AI grading',
+    assessmentQuestionId: assessment_question.id,
+  });
+
+  const all_instance_questions = await selectInstanceQuestionsForAssessmentQuestion({
+    assessment_question_id: assessment_question.id,
+  });
+
+  const instanceQuestionGradingJobs = await selectGradingJobsInfo(all_instance_questions);
+
+  const instance_questions = all_instance_questions.filter((instance_question) => {
+    switch (mode) {
+      case 'human_graded':
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+        return instanceQuestionGradingJobs[instance_question.id]?.some(
+          (job) => job.grading_method === 'Manual',
+        );
+      case 'all':
+        return true;
+      case 'selected':
+        return instance_question_ids?.includes(instance_question.id);
+      default:
+        assertNever(mode);
+    }
+  });
+
+  let item_statuses = instance_questions.reduce(
+    (acc, instance_question) => {
+      acc[instance_question.id] = JobItemStatus.queued;
+      return acc;
+    },
+    {} as Record<string, JobItemStatus>,
+  );
+
+  await emitServerJobProgressUpdate({
+    job_sequence_id: serverJob.jobSequenceId,
+    num_complete: 0,
+    num_failed: 0,
+    num_total: instance_questions.length,
+    item_statuses,
   });
 
   serverJob.executeInBackground(async (job) => {
-    if (!assessment_question.max_manual_points) {
-      job.fail('The assessment question has no manual grading');
+    // Track rate limiting and cost only when using platform API keys, since custom
+    // API key users are paying for their own usage and platform limits don't apply.
+    const trackRateLimitAndCost = !course_instance.ai_grading_use_custom_api_keys;
+    let rateLimitExceeded =
+      trackRateLimitAndCost &&
+      (await getIntervalUsage(course_instance)) > config.aiGradingRateLimitDollars;
+
+    // If the rate limit has already been exceeded, log it and exit early.
+    if (rateLimitExceeded) {
+      job.error("You've reached the hourly usage cap for AI grading. Please try again later.");
+
+      item_statuses = instance_questions.reduce(
+        (acc, instance_question) => {
+          acc[instance_question.id] = JobItemStatus.failed;
+          return acc;
+        },
+        {} as Record<string, JobItemStatus>,
+      );
+
+      await emitServerJobProgressUpdate({
+        job_sequence_id: serverJob.jobSequenceId,
+        num_complete: instance_questions.length,
+        num_failed: instance_questions.length,
+        num_total: instance_questions.length,
+        job_failure_message: HOURLY_USAGE_CAP_REACHED_MESSAGE,
+        item_statuses,
+      });
+      return;
     }
-    const all_instance_questions = await selectInstanceQuestionsForAssessmentQuestion({
-      assessment_question_id: assessment_question.id,
-    });
 
-    job.info(`Using model ${model_id} for AI grading.`);
+    // Check credit pool before starting the batch. This is a best-effort
+    // check without FOR UPDATE — concurrent batches may both pass this check.
+    // Credits are deducted per-submission *after* the API call, so if the pool
+    // is exhausted mid-batch the API cost is already incurred but the deduction
+    // will fail for remaining items. A future improvement could pre-reserve
+    // estimated credits for the batch.
+    if (trackRateLimitAndCost) {
+      const creditPool = await selectCreditPool(course_instance.id);
+      if (creditPool.total_milli_dollars <= 0) {
+        job.error(
+          `${INSUFFICIENT_CREDITS_MESSAGE} Available credits: ${formatMilliDollars(creditPool.total_milli_dollars)}.`,
+        );
 
-    job.info('Checking for embeddings for all submissions.');
-    let newEmbeddingsCount = 0;
-    if (provider === 'openai') {
-      if (!embeddingModel) {
-        // This should not happen.
-        job.fail('No embedding model available for OpenAI provider.');
+        item_statuses = instance_questions.reduce(
+          (acc, instance_question) => {
+            acc[instance_question.id] = JobItemStatus.failed;
+            return acc;
+          },
+          {} as Record<string, JobItemStatus>,
+        );
+
+        await emitServerJobProgressUpdate({
+          job_sequence_id: serverJob.jobSequenceId,
+          num_complete: instance_questions.length,
+          num_failed: instance_questions.length,
+          num_total: instance_questions.length,
+          job_failure_message: INSUFFICIENT_CREDITS_MESSAGE,
+          item_statuses,
+        });
         return;
       }
-      for (const instance_question of all_instance_questions) {
-        // Only checking for instance questions that can be used as RAG data.
-        // They should be graded last by a human.
-        if (instance_question.requires_manual_grading || instance_question.is_ai_graded) {
-          continue;
-        }
-        const submission_id = await selectLastSubmissionId(instance_question.id);
-        const submission_embedding = await selectEmbeddingForSubmission(submission_id);
-        if (!submission_embedding) {
-          await generateSubmissionEmbedding({
-            course,
-            question,
-            instance_question,
-            urlPrefix,
-            embeddingModel,
-          });
-          newEmbeddingsCount++;
-        }
-      }
-      job.info(`Calculated ${newEmbeddingsCount} embeddings.`);
-    } else {
-      job.info(`Skip embedding generation; RAG is not supported for model provider ${provider}.`);
     }
 
-    const instanceQuestionGradingJobs = await selectGradingJobsInfo(all_instance_questions);
-
-    const instance_questions = all_instance_questions.filter((instance_question) => {
-      switch (mode) {
-        case 'human_graded':
-          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-          return instanceQuestionGradingJobs[instance_question.id]?.some(
-            (job) => job.grading_method === 'Manual',
-          );
-        case 'all':
-          return true;
-        case 'selected':
-          return instance_question_ids?.includes(instance_question.id);
-        default:
-          assertNever(mode);
-      }
-    });
+    job.info(`Using model ${model_id} for AI grading.`);
     job.info(`Found ${instance_questions.length} submissions to grade!`);
 
     /**
@@ -222,6 +365,29 @@ export async function aiGrade({
       instance_question: InstanceQuestion,
       logger: AIGradingLogger,
     ): Promise<boolean> => {
+      if (rateLimitExceeded) {
+        logger.error(
+          `Skipping instance question ${instance_question.id} since the rate limit has been exceeded.`,
+        );
+        return false;
+      }
+
+      // Since other jobs may be concurrently running, we could exceed the rate limit
+      // by 19 requests worth of usage. We are okay with this potential race condition.
+      if (
+        trackRateLimitAndCost &&
+        (await getIntervalUsage(course_instance)) > config.aiGradingRateLimitDollars
+      ) {
+        logger.error(
+          "You've reached the hourly usage cap for AI grading. Please try again later. AI grading jobs that are still in progress will continue to completion.",
+        );
+        logger.error(
+          `Skipping instance question ${instance_question.id} since the rate limit has been exceeded.`,
+        );
+        rateLimitExceeded = true;
+        return false;
+      }
+
       // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       const shouldUpdateScore = !instanceQuestionGradingJobs[instance_question.id]?.some(
         (job) => job.grading_method === 'Manual',
@@ -235,15 +401,15 @@ export async function aiGrade({
       };
       // Get question html
       const questionModule = questionServers.getModule(question.type);
-      const render_question_results = await questionModule.render(
-        { question: true, submissions: false, answer: true },
+      const render_question_results = await questionModule.render({
+        renderSelection: { question: true, submissions: false, answer: true },
         variant,
         question,
-        null,
-        [],
-        question_course,
+        submission: null,
+        submissions: [],
+        course: question_course,
         locals,
-      );
+      });
       if (render_question_results.courseIssues.length > 0) {
         logger.error(render_question_results.courseIssues.toString());
         logger.error('Errors occurred while AI grading, see output for details');
@@ -252,86 +418,54 @@ export async function aiGrade({
       const questionPrompt = render_question_results.data.questionHtml;
       const questionAnswer = render_question_results.data.answerHtml;
 
-      let submission_embedding = await selectEmbeddingForSubmission(submission.id);
-      if (!submission_embedding && embeddingModel) {
-        submission_embedding = await generateSubmissionEmbedding({
-          course,
-          question,
-          instance_question,
-          urlPrefix,
-          embeddingModel,
-        });
-      }
-
-      const submission_text = await run(async () => {
-        if (submission_embedding) {
-          return submission_embedding.submission_text;
-        } else {
-          const render_submission_results = await questionModule.render(
-            { question: false, submissions: true, answer: false },
-            variant,
-            question,
-            submission,
-            [submission],
-            question_course,
-            locals,
-          );
-          return render_submission_results.data.submissionHtmls[0];
-        }
+      const render_submission_results = await questionModule.render({
+        renderSelection: { question: false, submissions: true, answer: false },
+        variant,
+        question,
+        submission,
+        submissions: [submission],
+        course: question_course,
+        locals,
       });
+      const submission_text = render_submission_results.data.submissionHtmls[0];
 
       const hasImage = containsImageCapture(submission_text);
 
-      const example_submissions = await run(async () => {
-        if (provider !== 'openai') {
-          // We are implementing RAG support only for OpenAI models.
-          return [];
-        }
+      const { rubric, rubric_items } = await selectCompleteRubric(assessment_question.id);
 
-        if (!submission_embedding) {
-          logger.info('No embedding available for submission, skipping RAG.');
-          return [];
-        }
-
-        // We're currently disabling RAG for submissions that deal with images.
-        // It won't make sense to pull graded examples for such questions until we
-        // have a strategy for finding similar example submissions based on the
-        // contents of the images.
-        //
-        // Note that this means we're still computing and storing the submission
-        // text and embeddings for such submissions, even though they won't be used
-        // for RAG. While this means we're unnecessarily spending money on actually
-        // generating the embeddings, it does mean that we don't have to special-case
-        // image-based questions in the embedding generation code, which keeps things
-        // simpler overall.
-        if (hasImage) return [];
-
-        return await selectClosestSubmissionInfo({
-          submission_id: submission.id,
-          assessment_question_id: assessment_question.id,
-          embedding: submission_embedding.embedding,
-          limit: 5,
-        });
-      });
-
-      // Log things for visibility and auditing.
-      let gradedExampleInfo = `\nInstance question ${instance_question.id}${example_submissions.length > 0 ? '\nThe following instance questions were used as human-graded examples:' : ''}`;
-      for (const example of example_submissions) {
-        gradedExampleInfo += `\n- ${example.instance_question_id}`;
+      const mustacheParams = {
+        correct_answers: submission.true_answer ?? {},
+        params: submission.params ?? {},
+        submitted_answers: submission.submitted_answer,
+      };
+      for (const rubric_item of rubric_items) {
+        rubric_item.description = mustache.render(rubric_item.description, mustacheParams);
+        rubric_item.explanation = rubric_item.explanation
+          ? mustache.render(rubric_item.explanation, mustacheParams)
+          : null;
+        rubric_item.grader_note = rubric_item.grader_note
+          ? mustache.render(rubric_item.grader_note, mustacheParams)
+          : null;
       }
-      logger.info(gradedExampleInfo);
 
-      const rubric_items = await selectRubricForGrading(assessment_question.id);
-
-      const input = await generatePrompt({
+      let input = await generatePrompt({
         questionPrompt,
         questionAnswer,
         submission_text,
         submitted_answer: submission.submitted_answer,
-        example_submissions,
         rubric_items,
+        grader_guidelines: rubric?.grader_guidelines ?? null,
+        params: variant.params ?? {},
+        true_answer: variant.true_answer ?? {},
         model_id,
       });
+
+      const submittedImages = submission.submitted_answer
+        ? extractSubmissionImages({
+            submission_text,
+            submitted_answer: submission.submitted_answer,
+          })
+        : {};
 
       // If the submission contains images, prompt the model to transcribe any relevant information
       // out of the image.
@@ -374,28 +508,169 @@ export async function aiGrade({
         }
 
         // OpenAI will take the property descriptions into account. See the
-        // examples here: https://platform.openai.com/docs/guides/structured-outputs
+        // examples here: https://developers.openai.com/api/docs/guides/structured-outputs
         const RubricGradingResultSchema = z.object({
           explanation: z.string().describe(explanationDescription),
+          // rubric_items must be the last property in the schema.
+          // Google Gemini models may output malformed JSON. correctGeminiMalformedRubricGradingJson,
+          // the function that attempts to repair the JSON, depends on rubric_items being at the end of
+          // generated response.
           rubric_items: RubricGradingItemsSchema,
         });
 
-        const response = await generateObject({
-          model,
-          schema: RubricGradingResultSchema,
-          messages: input,
-          providerOptions: {
-            openai: openaiProviderOptions,
-          },
-        });
+        const RubricImageGradingResultSchema = RubricGradingResultSchema.merge(
+          HandwritingOrientationsOutputSchema,
+        );
 
-        logResponseUsage({ response, logger });
+        const {
+          gradingResponseWithRotationIssue,
+          rotationCorrections,
+          finalGradingResponse,
+          rotationCorrectionApplied,
+        } = (await run(async () => {
+          const experimental_repairText: (options: {
+            text: string;
+            error: JSONParseError | TypeValidationError;
+          }) => Promise<string | null> = async (options) => {
+            if (provider !== 'google' || options.error.name !== 'AI_JSONParseError') {
+              return null;
+            }
+            // If a JSON parse error occurs with a Google Gemini model, we attempt to correct
+            // unescaped backslashes in the rubric item keys of the response.
 
-        logger.info(`Parsed response: ${JSON.stringify(response.object, null, 2)}`);
+            // TODO: Remove this temporary fix once Google fixes the underlying issue.
+            // Issue on the Google GenAI repository: https://github.com/googleapis/js-genai/issues/1226#issue-3783507624
+            return correctGeminiMalformedRubricGradingJson(options.text);
+          };
+
+          if (
+            !hasImage ||
+            !submission.submitted_answer ||
+            // Empirical testing demonstrated that rotation correction
+            // was highly effective only for Gemini models.
+            provider !== 'google'
+          ) {
+            return {
+              finalGradingResponse: await generateObject({
+                model,
+                schema: RubricGradingResultSchema,
+                messages: input,
+                experimental_repairText,
+                providerOptions: {
+                  openai: openaiProviderOptions,
+                },
+              }),
+              rotationCorrectionApplied: false,
+            };
+          }
+
+          const initialResponse = await generateObject({
+            model,
+            schema: RubricImageGradingResultSchema,
+            messages: input,
+            experimental_repairText,
+            providerOptions: {
+              openai: openaiProviderOptions,
+            },
+          });
+
+          if (
+            initialResponse.object.handwriting_orientations.every(
+              (orientation) => orientation === 'Upright (0 degrees)',
+            )
+          ) {
+            // All images are upright, no rotation correction needed.
+            return { finalGradingResponse: initialResponse, rotationCorrectionApplied: false };
+          }
+          // Otherwise, correct all image orientations.
+
+          // Note: The LLM isn't aware of an identifier (e.g. filename) for each submitted image,
+          // so we assume all images might need correction. If an image is already upright, the
+          // correction process will keep the image the same.
+
+          const { rotatedSubmittedAnswer, rotationCorrections } = await correctImagesOrientation({
+            submittedAnswer: submission.submitted_answer,
+            submittedImages,
+            model,
+          });
+
+          const rotationCorrected = Object.values(rotationCorrections).some(
+            (correction) => correction.degreesRotated !== 0,
+          );
+          // TODO: Return initialResponse if rotationCorrected == false, and modify corresponding cost tracking/rate limiting logic.
+
+          // Regenerate the prompt with the rotation-corrected images.
+          input = await generatePrompt({
+            questionPrompt,
+            questionAnswer,
+            rotationCorrected,
+            submission_text,
+            submitted_answer: rotatedSubmittedAnswer,
+            rubric_items,
+            grader_guidelines: rubric?.grader_guidelines ?? null,
+            params: variant.params ?? {},
+            true_answer: variant.true_answer ?? {},
+            model_id,
+          });
+
+          // Perform grading with the rotation-corrected images.
+          const finalResponse = await generateObject({
+            model,
+            schema: RubricImageGradingResultSchema,
+            messages: input,
+            experimental_repairText,
+            providerOptions: {
+              openai: openaiProviderOptions,
+            },
+          });
+
+          return {
+            rotationCorrectionApplied: true,
+            gradingResponseWithRotationIssue: initialResponse,
+            rotationCorrections,
+            finalGradingResponse: finalResponse,
+          };
+        })) satisfies AiImageGradingResponses;
+
+        if (rotationCorrectionApplied) {
+          logResponsesUsage({
+            responses: [
+              ...Object.values(rotationCorrections).map((r) => r.response),
+              gradingResponseWithRotationIssue,
+              finalGradingResponse,
+            ],
+            logger,
+          });
+          if (trackRateLimitAndCost) {
+            for (const response of [
+              ...Object.values(rotationCorrections).map((r) => r.response),
+              gradingResponseWithRotationIssue,
+              finalGradingResponse,
+            ]) {
+              await addAiGradingCostToIntervalUsage({
+                courseInstance: course_instance,
+                model: model_id,
+                usage: response.usage,
+              });
+            }
+          }
+        } else {
+          logResponseUsage({ response: finalGradingResponse, logger });
+          if (trackRateLimitAndCost) {
+            await addAiGradingCostToIntervalUsage({
+              courseInstance: course_instance,
+              model: model_id,
+              usage: finalGradingResponse.usage,
+            });
+          }
+        }
+
+        logger.info(`Parsed response: ${JSON.stringify(finalGradingResponse.object, null, 2)}`);
         const { appliedRubricItems, appliedRubricDescription } = parseAiRubricItems({
-          ai_rubric_items: response.object.rubric_items,
+          ai_rubric_items: finalGradingResponse.object.rubric_items,
           rubric_items,
         });
+
         if (shouldUpdateScore) {
           // Requires grading: update instance question score
           const manual_rubric_data = {
@@ -403,29 +678,62 @@ export async function aiGrade({
             applied_rubric_items: appliedRubricItems,
           };
           await runInTransactionAsync(async () => {
-            const { grading_job_id } = await manualGrading.updateInstanceQuestionScore(
+            const { grading_job_id } = await manualGrading.updateInstanceQuestionScore({
               assessment,
-              instance_question.id,
-              submission.id,
-              null, // check_modified_at
-              {
+              instance_question_id: instance_question.id,
+              submission_id: submission.id,
+              check_modified_at: null,
+              score: {
                 // TODO: consider asking for and recording freeform feedback.
                 manual_rubric_data,
                 feedback: { manual: '' },
               },
-              user_id,
-              true, // is_ai_graded
-            );
+              authn_user_id: user_id,
+              is_ai_graded: true,
+            });
             assert(grading_job_id);
 
-            await insertAiGradingJob({
+            const aiGradingJobParams = {
               grading_job_id,
               job_sequence_id: serverJob.jobSequenceId,
               model_id,
               prompt: input,
-              response,
               course_id: course.id,
               course_instance_id: course_instance.id,
+            };
+
+            const aiGradingJobId = rotationCorrectionApplied
+              ? await insertAiGradingJobWithRotationCorrection({
+                  ...aiGradingJobParams,
+                  gradingResponseWithRotationIssue,
+                  rotationCorrections,
+                  gradingResponseWithRotationCorrection: finalGradingResponse,
+                })
+              : await insertAiGradingJob({
+                  ...aiGradingJobParams,
+                  response: finalGradingResponse,
+                });
+
+            await updateCourseInstanceUsagesForAiGradingResponses({
+              gradingJobId: grading_job_id,
+              authnUserId: authn_user_id,
+              model: model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+            });
+
+            await deductAiGradingCostIfNeeded({
+              trackRateLimitAndCost,
+              model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+              course_instance_id: course_instance.id,
+              user_id: authn_user_id,
+              ai_grading_job_id: aiGradingJobId,
+              assessment_question_id: assessment_question.id,
+              instance_question_id: instance_question.id,
             });
           });
         } else {
@@ -441,7 +749,7 @@ export async function aiGrade({
             );
             const score =
               manual_rubric_grading.computed_points / assessment_question.max_manual_points;
-            const grading_job_id = await queryRow(
+            const grading_job_id = await queryScalar(
               sql.insert_grading_job,
               {
                 submission_id: submission.id,
@@ -456,14 +764,48 @@ export async function aiGrade({
               },
               IdSchema,
             );
-            await insertAiGradingJob({
+
+            const aiGradingJobParams = {
               grading_job_id,
               job_sequence_id: serverJob.jobSequenceId,
               model_id,
               prompt: input,
-              response,
               course_id: course.id,
               course_instance_id: course_instance.id,
+            };
+
+            const aiGradingJobId = rotationCorrectionApplied
+              ? await insertAiGradingJobWithRotationCorrection({
+                  ...aiGradingJobParams,
+                  gradingResponseWithRotationIssue,
+                  rotationCorrections,
+                  gradingResponseWithRotationCorrection: finalGradingResponse,
+                })
+              : await insertAiGradingJob({
+                  ...aiGradingJobParams,
+                  response: finalGradingResponse,
+                });
+
+            await updateCourseInstanceUsagesForAiGradingResponses({
+              gradingJobId: grading_job_id,
+              authnUserId: authn_user_id,
+              model: model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+            });
+
+            await deductAiGradingCostIfNeeded({
+              trackRateLimitAndCost,
+              model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+              course_instance_id: course_instance.id,
+              user_id: authn_user_id,
+              ai_grading_job_id: aiGradingJobId,
+              assessment_question_id: assessment_question.id,
+              instance_question_id: instance_question.id,
             });
           });
         }
@@ -493,53 +835,193 @@ export async function aiGrade({
             ),
         });
 
-        const response = await generateObject({
-          model,
-          schema: GradingResultSchema,
-          messages: input,
-          providerOptions: {
-            openai: openaiProviderOptions,
-          },
-        });
+        const ImageGradingResultSchema = GradingResultSchema.merge(
+          HandwritingOrientationsOutputSchema,
+        );
 
-        logResponseUsage({ response, logger });
+        const {
+          rotationCorrectionApplied,
+          finalGradingResponse,
+          gradingResponseWithRotationIssue,
+          rotationCorrections,
+        } = (await run(async () => {
+          if (
+            !hasImage ||
+            !submission.submitted_answer ||
+            // Empirical testing demonstrated that rotation correction
+            // was highly effective only for Gemini models.
+            provider !== 'google'
+          ) {
+            return {
+              finalGradingResponse: await generateObject({
+                model,
+                schema: GradingResultSchema,
+                messages: input,
+                providerOptions: {
+                  openai: openaiProviderOptions,
+                },
+              }),
+              rotationCorrectionApplied: false,
+            };
+          }
 
-        logger.info(`Parsed response: ${JSON.stringify(response.object, null, 2)}`);
-        const score = response.object.score;
+          const initialResponse = await generateObject({
+            model,
+            schema: ImageGradingResultSchema,
+            messages: input,
+            providerOptions: {
+              openai: openaiProviderOptions,
+            },
+          });
+
+          if (
+            initialResponse.object.handwriting_orientations.every(
+              (orientation) => orientation === 'Upright (0 degrees)',
+            )
+          ) {
+            // All images are upright, no rotation correction needed.
+            return { finalGradingResponse: initialResponse, rotationCorrectionApplied: false };
+          }
+
+          const { rotatedSubmittedAnswer, rotationCorrections } = await correctImagesOrientation({
+            submittedAnswer: submission.submitted_answer,
+            submittedImages,
+            model,
+          });
+
+          // Regenerate the prompt with the rotation-corrected images.
+          input = await generatePrompt({
+            questionPrompt,
+            questionAnswer,
+            submission_text,
+            submitted_answer: rotatedSubmittedAnswer,
+            rubric_items,
+            grader_guidelines: rubric?.grader_guidelines ?? null,
+            params: variant.params ?? {},
+            true_answer: variant.true_answer ?? {},
+            model_id,
+          });
+
+          // Perform grading with the rotation-corrected images.
+          const finalResponse = await generateObject({
+            model,
+            schema: ImageGradingResultSchema,
+            messages: input,
+            providerOptions: {
+              openai: openaiProviderOptions,
+            },
+          });
+
+          return {
+            rotationCorrectionApplied: true,
+            gradingResponseWithRotationIssue: initialResponse,
+            rotationCorrections,
+            finalGradingResponse: finalResponse,
+          };
+        })) satisfies AiImageGradingResponses;
+
+        if (rotationCorrectionApplied) {
+          logResponsesUsage({
+            responses: [
+              ...Object.values(rotationCorrections).map((correction) => correction.response),
+              gradingResponseWithRotationIssue,
+              finalGradingResponse,
+            ],
+            logger,
+          });
+          if (trackRateLimitAndCost) {
+            for (const response of [
+              ...Object.values(rotationCorrections).map((r) => r.response),
+              gradingResponseWithRotationIssue,
+              finalGradingResponse,
+            ]) {
+              await addAiGradingCostToIntervalUsage({
+                courseInstance: course_instance,
+                model: model_id,
+                usage: response.usage,
+              });
+            }
+          }
+        } else {
+          logResponseUsage({ response: finalGradingResponse, logger });
+          if (trackRateLimitAndCost) {
+            await addAiGradingCostToIntervalUsage({
+              courseInstance: course_instance,
+              model: model_id,
+              usage: finalGradingResponse.usage,
+            });
+          }
+        }
+
+        logger.info(`Parsed response: ${JSON.stringify(finalGradingResponse.object, null, 2)}`);
+        const score = finalGradingResponse.object.score;
 
         if (shouldUpdateScore) {
           // Requires grading: update instance question score
-          const feedback = response.object.feedback;
+          const feedback = finalGradingResponse.object.feedback;
           await runInTransactionAsync(async () => {
-            const { grading_job_id } = await manualGrading.updateInstanceQuestionScore(
+            const { grading_job_id } = await manualGrading.updateInstanceQuestionScore({
               assessment,
-              instance_question.id,
-              submission.id,
-              null, // check_modified_at
-              {
+              instance_question_id: instance_question.id,
+              submission_id: submission.id,
+              check_modified_at: null,
+              score: {
                 manual_score_perc: score,
                 feedback: { manual: feedback },
               },
-              user_id,
-              true, // is_ai_graded
-            );
+              authn_user_id: user_id,
+              is_ai_graded: true,
+            });
             assert(grading_job_id);
 
-            await insertAiGradingJob({
+            const aiGradingJobParams = {
               grading_job_id,
               job_sequence_id: serverJob.jobSequenceId,
               model_id,
               prompt: input,
-              response,
               course_id: course.id,
               course_instance_id: course_instance.id,
+            };
+
+            const aiGradingJobId = rotationCorrectionApplied
+              ? await insertAiGradingJobWithRotationCorrection({
+                  ...aiGradingJobParams,
+                  gradingResponseWithRotationIssue,
+                  rotationCorrections,
+                  gradingResponseWithRotationCorrection: finalGradingResponse,
+                })
+              : await insertAiGradingJob({
+                  ...aiGradingJobParams,
+                  response: finalGradingResponse,
+                });
+
+            await updateCourseInstanceUsagesForAiGradingResponses({
+              gradingJobId: grading_job_id,
+              authnUserId: authn_user_id,
+              model: model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+            });
+
+            await deductAiGradingCostIfNeeded({
+              trackRateLimitAndCost,
+              model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+              course_instance_id: course_instance.id,
+              user_id: authn_user_id,
+              ai_grading_job_id: aiGradingJobId,
+              assessment_question_id: assessment_question.id,
+              instance_question_id: instance_question.id,
             });
           });
         } else {
           // Does not require grading: only create grading job and rubric grading
           await runInTransactionAsync(async () => {
             assert(assessment_question.max_manual_points);
-            const grading_job_id = await queryRow(
+            const grading_job_id = await queryScalar(
               sql.insert_grading_job,
               {
                 submission_id: submission.id,
@@ -554,23 +1036,59 @@ export async function aiGrade({
               },
               IdSchema,
             );
-            await insertAiGradingJob({
+
+            const aiGradingJobParams = {
               grading_job_id,
               job_sequence_id: serverJob.jobSequenceId,
               model_id,
               prompt: input,
-              response,
               course_id: course.id,
               course_instance_id: course_instance.id,
+            };
+            const aiGradingJobId = rotationCorrectionApplied
+              ? await insertAiGradingJobWithRotationCorrection({
+                  ...aiGradingJobParams,
+                  gradingResponseWithRotationIssue,
+                  rotationCorrections,
+                  gradingResponseWithRotationCorrection: finalGradingResponse,
+                })
+              : await insertAiGradingJob({
+                  ...aiGradingJobParams,
+                  response: finalGradingResponse,
+                });
+
+            await updateCourseInstanceUsagesForAiGradingResponses({
+              gradingJobId: grading_job_id,
+              authnUserId: authn_user_id,
+              model: model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+            });
+
+            await deductAiGradingCostIfNeeded({
+              trackRateLimitAndCost,
+              model_id,
+              gradingResponseWithRotationIssue,
+              rotationCorrections,
+              finalGradingResponse,
+              course_instance_id: course_instance.id,
+              user_id: authn_user_id,
+              ai_grading_job_id: aiGradingJobId,
+              assessment_question_id: assessment_question.id,
+              instance_question_id: instance_question.id,
             });
           });
         }
 
-        logger.info(`AI score: ${response.object.score}`);
+        logger.info(`AI score: ${finalGradingResponse.object.score}`);
       }
 
       return true;
     };
+
+    let num_complete = 0;
+    let num_failed = 0;
 
     // Grade each instance question and return an array indicating the success/failure of each grading operation.
     const instance_question_grading_successes = await async.mapLimit(
@@ -595,11 +1113,42 @@ export async function aiGrade({
         };
 
         try {
-          return await gradeInstanceQuestion(instance_question, logger);
-        } catch (err) {
+          item_statuses[instance_question.id] = JobItemStatus.in_progress;
+          await emitServerJobProgressUpdate({
+            job_sequence_id: serverJob.jobSequenceId,
+            num_complete,
+            num_failed,
+            num_total: instance_questions.length,
+            item_statuses,
+            job_failure_message: rateLimitExceeded ? HOURLY_USAGE_CAP_REACHED_MESSAGE : undefined,
+          });
+
+          const gradingSuccessful = await gradeInstanceQuestion(instance_question, logger);
+
+          item_statuses[instance_question.id] = gradingSuccessful
+            ? JobItemStatus.complete
+            : JobItemStatus.failed;
+
+          if (!gradingSuccessful) {
+            num_failed += 1;
+          }
+
+          return gradingSuccessful;
+        } catch (err: any) {
           logger.error(err);
+          item_statuses[instance_question.id] = JobItemStatus.failed;
+          num_failed += 1;
           return false;
         } finally {
+          num_complete += 1;
+          await emitServerJobProgressUpdate({
+            job_sequence_id: serverJob.jobSequenceId,
+            num_complete,
+            num_failed,
+            num_total: instance_questions.length,
+            item_statuses,
+            job_failure_message: rateLimitExceeded ? HOURLY_USAGE_CAP_REACHED_MESSAGE : undefined,
+          });
           for (const log of logs) {
             switch (log.messageType) {
               case 'info':

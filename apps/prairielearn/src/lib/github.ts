@@ -141,8 +141,7 @@ export async function createCourseRepoJob(
   const createCourseRepo = async (job: ServerJob) => {
     const client = getGithubClient();
     if (client === null) {
-      // If we are running locally and don't have a client, then just exit early
-      job.info('Nothing to do, exiting...');
+      job.info('No GitHub client token configured; skipping repository setup.');
       return;
     }
 
@@ -160,7 +159,6 @@ export async function createCourseRepoJob(
     const infoCoursePath = path.join(TEMPLATE_COURSE_PATH, 'infoCourse.json');
     const infoCourse = JSON.parse(await fs.readFile(infoCoursePath, 'utf-8'));
 
-    infoCourse.uuid = crypto.randomUUID();
     infoCourse.name = options.short_name;
     infoCourse.title = options.title;
     infoCourse.timezone = options.display_timezone;
@@ -215,7 +213,7 @@ export async function createCourseRepoJob(
         job.info(
           `Added user ${options.github_user} as administrator of repo ${options.repo_short_name}`,
         );
-      } catch (err) {
+      } catch (err: any) {
         job.error(`Could not add user "${options.github_user}": ${err}`);
       }
     }
@@ -231,7 +229,7 @@ export async function createCourseRepoJob(
       path: options.path,
       repository,
       branch,
-      authn_user_id: authn_user.user_id,
+      authn_user_id: authn_user.id,
     });
     job.verbose('Inserted course into database:');
     job.verbose(JSON.stringify(inserted_course, null, 4));
@@ -258,7 +256,7 @@ export async function createCourseRepoJob(
     });
 
     job.info('Sync git repository to database');
-    const syncResult = await syncDiskToSql(inserted_course.id, inserted_course.path, job);
+    const syncResult = await syncDiskToSql(inserted_course, job);
     if (syncResult.status !== 'complete') {
       // Sync should never fail when creating a brand new repository, if we hit this
       // then we have a problem.
@@ -282,10 +280,10 @@ export async function createCourseRepoJob(
 
   // Create a server job to wrap the course creation process.
   const serverJob = await createServerJob({
-    userId: authn_user.user_id,
-    authnUserId: authn_user.user_id,
     type: 'create_course_repo',
     description: 'Create course repository from request',
+    userId: authn_user.id,
+    authnUserId: authn_user.id,
     courseRequestId: options.course_request_id,
   });
 
@@ -296,7 +294,7 @@ export async function createCourseRepoJob(
         status: 'approved',
         course_request_id: options.course_request_id,
       });
-    } catch (err) {
+    } catch (err: any) {
       await sqldb.execute(sql.set_course_request_status, {
         status: 'failed',
         course_request_id: options.course_request_id,
@@ -309,7 +307,7 @@ export async function createCourseRepoJob(
             `${err.message.trim()}\n` +
             '```',
         );
-      } catch (err) {
+      } catch (err: any) {
         logger.error('Error sending course request message to Slack', err);
         Sentry.captureException(err);
       }
@@ -358,5 +356,5 @@ export function courseRepoContentUrl(
     return `https://github.com/PrairieLearn/PrairieLearn/tree/master/exampleCourse${path}`;
   }
   const repoPrefix = httpPrefixForCourseRepo(course.repository);
-  return repoPrefix ? `${repoPrefix}/tree/${course.branch}${path}` : null;
+  return repoPrefix && course.branch ? `${repoPrefix}/tree/${course.branch}${path}` : null;
 }

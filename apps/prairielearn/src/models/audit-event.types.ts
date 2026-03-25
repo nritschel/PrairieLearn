@@ -8,14 +8,17 @@ import type { TableName } from '../lib/db-types.js';
  */
 export const requiredTableFields = {
   course_instances: ['course_instance_id'],
-  pl_courses: ['course_id'],
+  course_instance_ai_grading_credentials: ['course_instance_id'],
+  courses: ['course_id'],
   users: ['subject_user_id'],
-  groups: ['group_id'],
+  teams: ['team_id'],
   assessment_instances: ['assessment_instance_id'],
   assessment_questions: ['assessment_question_id'],
   assessments: ['assessment_id'],
   institutions: ['institution_id'],
   enrollments: ['course_instance_id', 'subject_user_id', 'action_detail'],
+  student_label_enrollments: ['enrollment_id', 'action_detail'],
+  assessment_access_control_rules: ['assessment_id'],
 } as const satisfies Partial<Record<TableName, readonly string[]>>;
 
 /**
@@ -27,7 +30,11 @@ export type SupportedTableActionCombination =
       actionDetail?: null;
     }
   | {
-      tableName: 'pl_courses';
+      tableName: 'course_instance_ai_grading_credentials';
+      actionDetail?: null;
+    }
+  | {
+      tableName: 'courses';
       actionDetail?: null;
     }
   | {
@@ -35,7 +42,7 @@ export type SupportedTableActionCombination =
       actionDetail?: null;
     }
   | {
-      tableName: 'groups';
+      tableName: 'teams';
       actionDetail?: null;
     }
   | {
@@ -58,15 +65,33 @@ export type SupportedTableActionCombination =
       tableName: 'enrollments';
       actionDetail?:
         | 'implicit_joined'
+        // NOTE: while we no longer write `explicit_joined` events, they exist
+        // in production, so we must keep supporting them here. We could consider
+        // migrating them to another type in the future.
         | 'explicit_joined'
         | 'invited'
+        | 'invited_by_manual_sync'
         | 'invitation_accepted'
         | 'invitation_rejected'
         | 'blocked'
         | 'unblocked'
+        | 'unblocked_by_manual_sync'
         | 'invitation_deleted'
+        | 'invitation_deleted_by_manual_sync'
+        | 'left'
         | 'removed'
+        | 'removed_by_manual_sync'
+        | 'reenrolled_by_manual_sync'
+        | 'reenrolled_by_instructor'
         | null;
+    }
+  | {
+      tableName: 'student_label_enrollments';
+      actionDetail?: 'enrollment_added' | 'enrollment_removed' | null;
+    }
+  | {
+      tableName: 'assessment_access_control_rules';
+      actionDetail?: 'rule_saved' | 'rule_deleted' | null;
     };
 export type SupportedActionsForTable<T extends TableName> = NonNullable<
   Exclude<Extract<SupportedTableActionCombination, { tableName: T }>['actionDetail'], null>

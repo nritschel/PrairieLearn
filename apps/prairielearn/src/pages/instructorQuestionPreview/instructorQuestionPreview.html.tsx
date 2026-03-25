@@ -1,13 +1,16 @@
 import assert from 'node:assert';
 
 import { html, unsafeHtml } from '@prairielearn/html';
-import { renderHtml } from '@prairielearn/preact';
 import { run } from '@prairielearn/run';
 
+import {
+  CalculatorDrawer,
+  CalculatorDrawerHeadScripts,
+  CalculatorDrawerToggle,
+} from '../../components/CalculatorDrawer.js';
 import { InstructorInfoPanel } from '../../components/InstructorInfoPanel.js';
 import { PageLayout } from '../../components/PageLayout.js';
 import { QuestionContainer } from '../../components/QuestionContainer.js';
-import { QuestionSyncErrorsAndWarnings } from '../../components/SyncErrorsAndWarnings.js';
 import { assetPath, compiledScriptTag, nodeModulesAssetPath } from '../../lib/assets.js';
 import { type CopyTarget } from '../../lib/copy-content.js';
 import type { ResLocalsForPage } from '../../lib/res-locals.js';
@@ -31,7 +34,7 @@ export function InstructorQuestionPreview({
   renderSubmissionSearchParams: URLSearchParams;
   readmeHtml: string;
   questionCopyTargets: CopyTarget[] | null;
-  resLocals: ResLocalsForPage['instructor-question'];
+  resLocals: ResLocalsForPage<'instructor-question'>;
 }) {
   assert(resLocals.question.qid !== null);
 
@@ -47,8 +50,12 @@ export function InstructorQuestionPreview({
       pageNote: resLocals.question.qid,
     },
     headContent: html`
-      ${compiledScriptTag('question.ts')}
-      <script defer src="${nodeModulesAssetPath('mathjax/es5/startup.js')}"></script>
+      <meta
+        name="mathjax-fonts-path"
+        content="${nodeModulesAssetPath('@mathjax/mathjax-newcm-font')}"
+      />
+      ${compiledScriptTag('question.ts')} ${CalculatorDrawerHeadScripts()}
+      <script defer src="${nodeModulesAssetPath('mathjax/tex-svg.js')}"></script>
       <script>
         document.urlPrefix = '${resLocals.urlPrefix}';
       </script>
@@ -81,18 +88,9 @@ export function InstructorQuestionPreview({
         }
       </style>
     `,
-    preContent: html`
-      <div class="container-fluid">
-        ${renderHtml(
-          <QuestionSyncErrorsAndWarnings
-            authzData={resLocals.authz_data}
-            question={resLocals.question}
-            course={resLocals.course}
-            urlPrefix={resLocals.urlPrefix}
-          />,
-        )}
-      </div>
-    `,
+    postContent: CalculatorDrawer({
+      storageKey: `calculator-preview-${resLocals.question.id}`,
+    }),
     content: html`
       ${manualGradingPreviewEnabled
         ? html`
@@ -177,6 +175,7 @@ export function InstructorQuestionPreview({
               </div>
             </div>
           </div>
+          ${CalculatorDrawerToggle({ showInfoPopover: true })}
           ${InstructorInfoPanel({
             course: resLocals.course,
             course_instance: resLocals.course_instance,

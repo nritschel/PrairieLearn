@@ -6,10 +6,11 @@ import { afterEach, assert, beforeEach, describe, expect, it } from 'vitest';
 import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
 
 import * as chunksLib from '../lib/chunks.js';
 import { config } from '../lib/config.js';
-import { CourseSchema, IdSchema } from '../lib/db-types.js';
+import { type Course, CourseSchema } from '../lib/db-types.js';
 import { TEST_COURSE_PATH } from '../lib/paths.js';
 import { selectCourseInstanceByShortName } from '../models/course-instances.js';
 import { selectCourseById } from '../models/course.js';
@@ -271,7 +272,7 @@ describe('chunks', () => {
     let tempTestCourseDir: tmp.DirectoryResult;
     let tempChunksDir: tmp.DirectoryResult;
     const originalChunksConsumerDirectory = config.chunksConsumerDirectory;
-    let courseId: string;
+    let course: Course;
     let courseInstanceId: string;
     let assessmentId: string;
     let questionId: string;
@@ -300,33 +301,32 @@ describe('chunks', () => {
 
       await helperServer.before(tempTestCourseDir.path)();
 
-      // Find the ID of this course
-      const results = await sqldb.queryRow(
+      // Find this course
+      course = await sqldb.queryRow(
         sql.select_course_by_path,
         { course_path: tempTestCourseDir.path },
         CourseSchema,
       );
-      courseId = results.id;
 
       // Find the ID of the course instance
-      courseInstanceId = await sqldb.queryRow(
+      courseInstanceId = await sqldb.queryScalar(
         sql.select_course_instance,
         { long_name: 'Spring 2015' },
         IdSchema,
       );
 
       // Find the ID of an assessment that has clientFilesAssessment
-      assessmentId = await sqldb.queryRow(
+      assessmentId = await sqldb.queryScalar(
         sql.select_assessment,
         { tid: 'exam1-automaticTestSuite' },
         IdSchema,
       );
 
       // Find the ID of a question.
-      questionId = await sqldb.queryRow(sql.select_question, { qid: 'addNumbers' }, IdSchema);
+      questionId = await sqldb.queryScalar(sql.select_question, { qid: 'addNumbers' }, IdSchema);
 
       // Find the ID of a nested question.
-      nestedQuestionId = await sqldb.queryRow(
+      nestedQuestionId = await sqldb.queryScalar(
         sql.select_question,
         { qid: 'subfolder/nestedQuestion' },
         IdSchema,
@@ -356,21 +356,21 @@ describe('chunks', () => {
 
       const courseDir = tempTestCourseDir.path;
       const courseRuntimeDir = chunksLib.getRuntimeDirectoryForCourse({
-        id: courseId,
+        id: course.id,
         path: courseDir,
       });
 
       // Generate chunks for the test course.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       const chunksToLoad: chunksLib.Chunk[] = [{ type: 'question', questionId }];
 
       // Load the question's chunk.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Move the question. We can't directly move a directory to a subdirectory
       // of itself, so we move it to a temporary location first.
@@ -382,17 +382,17 @@ describe('chunks', () => {
 
       // Sync course to DB.
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Regenerate chunks.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Reload chunks.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Check that the chunk was written to the correct location.
       assert.isOk(
@@ -410,21 +410,21 @@ describe('chunks', () => {
       // new chunk correctly. This test ensures that it's loaded correctly.
       const courseDir = tempTestCourseDir.path;
       const courseRuntimeDir = chunksLib.getRuntimeDirectoryForCourse({
-        id: courseId,
+        id: course.id,
         path: courseDir,
       });
 
       // Generate chunks for the test course.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       const chunksToLoad: chunksLib.Chunk[] = [{ type: 'question', questionId: nestedQuestionId }];
 
       // Load the question's chunk.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Move the question. We can't directly move a directory to one of its
       // parent directories, so we move it to a temporary location first.
@@ -437,17 +437,17 @@ describe('chunks', () => {
 
       // Sync course to DB.
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Regenerate chunks.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Reload chunks.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Check that the chunk was written to the correct location.
       assert.isOk(
@@ -458,7 +458,7 @@ describe('chunks', () => {
     it('deletes chunks that are no longer needed', async () => {
       const courseDir = tempTestCourseDir.path;
       const courseRuntimeDir = chunksLib.getRuntimeDirectoryForCourse({
-        id: courseId,
+        id: course.id,
         path: courseDir,
       });
 
@@ -493,12 +493,12 @@ describe('chunks', () => {
       // Generate chunks for the test course
       await chunksLib.updateChunksForCourse({
         coursePath: tempTestCourseDir.path,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Load and unpack chunks
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Assert that the unpacked chunks exist on disk
       assert.isOk(await fs.pathExists(path.join(courseRuntimeDir, 'elements')));
@@ -534,24 +534,24 @@ describe('chunks', () => {
 
       // Sync course to DB.
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Regenerate chunks
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Reload the chunks
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Assert that the chunks have been removed from disk
       assert.isNotOk(await fs.pathExists(path.join(courseRuntimeDir, 'elements')));
       assert.isNotOk(await fs.pathExists(path.join(courseRuntimeDir, 'elementExtensions')));
 
       // Assert that the chunks have been deleted from the database
-      let databaseChunks = await getAllChunksForCourse(courseId);
+      let databaseChunks = await getAllChunksForCourse(course.id);
       assert.isUndefined(databaseChunks.find((chunk) => chunk.type === 'elements'));
       assert.isUndefined(databaseChunks.find((chunk) => chunk.type === 'elementExtensions'));
 
@@ -611,17 +611,17 @@ describe('chunks', () => {
       await fs.remove(path.join(courseDir, 'questions', 'addNumbers'));
 
       // Sync course to DB.
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Regenerate chunks
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Reload the chunks
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Assert that the remaining chunks have been removed from disk
       assert.isNotOk(await fs.pathExists(path.join(courseRuntimeDir, 'serverFilesCourse')));
@@ -650,7 +650,7 @@ describe('chunks', () => {
       );
 
       // Assert that the remaining chunks have been deleted from the database
-      databaseChunks = await getAllChunksForCourse(courseId);
+      databaseChunks = await getAllChunksForCourse(course.id);
       assert.isUndefined(databaseChunks.find((chunk) => chunk.type === 'serverFilesCourse'));
       assert.isUndefined(databaseChunks.find((chunk) => chunk.type === 'clientFilesCourse'));
       assert.isUndefined(
@@ -679,12 +679,12 @@ describe('chunks', () => {
       // Generate initial chunks for the test course.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Verify that an initial chunk exists for this course instance.
-      let databaseChunks = await getAllChunksForCourse(courseId);
+      let databaseChunks = await getAllChunksForCourse(course.id);
       assert.isOk(
         databaseChunks.find(
           (chunk) =>
@@ -706,10 +706,10 @@ describe('chunks', () => {
 
       // Sync course to DB so that the course_instance row is replaced (soft-delete old, insert new)
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Fetch the (new) course instance ID by long_name; this should now differ from the previous id
-      const newCourseInstanceId = await sqldb.queryRow(
+      const newCourseInstanceId = await sqldb.queryScalar(
         sql.select_course_instance,
         { long_name: 'Spring 2015' },
         IdSchema,
@@ -719,12 +719,12 @@ describe('chunks', () => {
       // Regenerate chunks. After the fix, this should create a new chunk for newCourseInstanceId
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Re-read chunks from DB
-      databaseChunks = await getAllChunksForCourse(courseId);
+      databaseChunks = await getAllChunksForCourse(course.id);
 
       // A chunk should exist for the new course instance id.
       assert.isOk(
@@ -754,19 +754,19 @@ describe('chunks', () => {
 
       // Sync course to DB so that the new course instance is inserted.
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Get the new course instance.
       const courseInstance = await selectCourseInstanceByShortName({
-        course: await selectCourseById(courseId),
-        short_name: 'new',
+        course: await selectCourseById(course.id),
+        shortName: 'new',
       });
 
       // Generate new chunks.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
         changedFiles: [
           path.relative(courseDir, infoCourseInstancePath),
           path.relative(courseDir, clientFilePath),
@@ -774,7 +774,7 @@ describe('chunks', () => {
       });
 
       // Verify that a chunk exists for this course instance.
-      const databaseChunks = await getAllChunksForCourse(courseId);
+      const databaseChunks = await getAllChunksForCourse(course.id);
       assert.isOk(
         databaseChunks.find(
           (chunk) =>
@@ -790,10 +790,10 @@ describe('chunks', () => {
           courseInstanceId: courseInstance.id,
         },
       ];
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       const courseRuntimeDir = chunksLib.getRuntimeDirectoryForCourse({
-        id: courseId,
+        id: course.id,
         path: courseDir,
       });
 
@@ -815,13 +815,13 @@ describe('chunks', () => {
       // Regenerate chunks.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
         changedFiles: [path.relative(courseDir, clientFilePath)],
       });
 
       // Load the chunk again.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Verify that the course instance client file has the updated contents.
       assert.isOk(await fs.pathExists(runtimeClientFilePath));
@@ -836,12 +836,12 @@ describe('chunks', () => {
       await fs.writeJson(infoCourseInstancePath, infoCiJson, { spaces: 2 });
 
       // Sync course to DB so that the course_instance row is updated.
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Assert that we produced a course instance without sync errors/warnings.
       const newCourseInstance = await selectCourseInstanceByShortName({
-        course: await selectCourseById(courseId),
-        short_name: 'new',
+        course: await selectCourseById(course.id),
+        shortName: 'new',
       });
       assert.equal(newCourseInstance.id, courseInstance.id);
       expect(newCourseInstance.sync_errors).toBeFalsy();
@@ -850,13 +850,13 @@ describe('chunks', () => {
       // Regenerate chunks.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
         changedFiles: [path.relative(courseDir, infoCourseInstancePath)],
       });
 
       // Load the chunk again.
-      await chunksLib.ensureChunksForCourseAsync(courseId, chunksToLoad);
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
 
       // Verify that the course instance client file still exists and has the expected contents.
       assert.isOk(await fs.pathExists(runtimeClientFilePath));
@@ -871,12 +871,12 @@ describe('chunks', () => {
       // Generate initial chunks for the test course.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Verify that an initial chunk exists for this assessment.
-      let databaseChunks = await getAllChunksForCourse(courseId);
+      let databaseChunks = await getAllChunksForCourse(course.id);
       assert.isOk(
         databaseChunks.find(
           (chunk) => chunk.type === 'clientFilesAssessment' && chunk.assessment_id === assessmentId,
@@ -899,10 +899,10 @@ describe('chunks', () => {
 
       // Sync course to DB so that the assessment row is replaced (soft-delete old, insert new)
       const { logger } = makeMockLogger();
-      await syncDiskToSql(courseId, courseDir, logger);
+      await syncDiskToSql(course, logger);
 
       // Fetch the (new) assessment ID by TID; this should now differ from the previous id
-      const newAssessmentId = await sqldb.queryRow(
+      const newAssessmentId = await sqldb.queryScalar(
         sql.select_assessment,
         { tid: 'exam1-automaticTestSuite' },
         IdSchema,
@@ -912,12 +912,12 @@ describe('chunks', () => {
       // Regenerate chunks. Current buggy behavior: this will NOT create a new chunk for newAssessmentId
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Re-read chunks from DB
-      databaseChunks = await getAllChunksForCourse(courseId);
+      databaseChunks = await getAllChunksForCourse(course.id);
 
       // After the fix: a chunk should exist for the new assessment id.
       // Today (pre-fix): this assertion will fail because we don't regenerate the chunk.
@@ -929,18 +929,74 @@ describe('chunks', () => {
       );
     });
 
+    it('preserves relative symlinks with .. in serverFilesCourse', async () => {
+      const courseDir = tempTestCourseDir.path;
+      const courseRuntimeDir = chunksLib.getRuntimeDirectoryForCourse({
+        id: course.id,
+        path: courseDir,
+      });
+
+      // Create a serverFilesCourse directory with a file and a symlink that uses ..
+      const serverFilesDir = path.join(courseDir, 'serverFilesCourse');
+      const libDir = path.join(serverFilesDir, 'lib');
+      const utilsDir = path.join(serverFilesDir, 'utils');
+
+      await fs.ensureDir(libDir);
+      await fs.ensureDir(utilsDir);
+
+      // Create a shared file in lib/
+      const sharedFilePath = path.join(libDir, 'shared.py');
+      await fs.writeFile(sharedFilePath, '# Shared library code\n');
+
+      // Create a symlink in utils/ that points to ../lib/shared.py
+      const symlinkPath = path.join(utilsDir, 'shared.py');
+      await fs.symlink('../lib/shared.py', symlinkPath);
+
+      // Verify the symlink was created correctly
+      const originalLinkTarget = await fs.readlink(symlinkPath);
+      assert.equal(originalLinkTarget, '../lib/shared.py');
+
+      // Generate chunks for the test course
+      await chunksLib.updateChunksForCourse({
+        coursePath: courseDir,
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
+      });
+
+      // Load and unpack the serverFilesCourse chunk
+      const chunksToLoad: chunksLib.Chunk[] = [{ type: 'serverFilesCourse' }];
+      await chunksLib.ensureChunksForCourseAsync(course.id, chunksToLoad);
+
+      // Verify the symlink exists in the unpacked chunk and has the correct target
+      const unpackedSymlinkPath = path.join(
+        courseRuntimeDir,
+        'serverFilesCourse',
+        'utils',
+        'shared.py',
+      );
+      const stat = await fs.lstat(unpackedSymlinkPath);
+      assert.isTrue(stat.isSymbolicLink(), 'Expected a symlink at utils/shared.py');
+
+      const unpackedLinkTarget = await fs.readlink(unpackedSymlinkPath);
+      assert.equal(unpackedLinkTarget, '../lib/shared.py', 'Symlink target should be preserved');
+
+      // Also verify the symlink resolves to the correct file
+      const resolvedContent = await fs.readFile(unpackedSymlinkPath, 'utf-8');
+      assert.equal(resolvedContent, '# Shared library code\n');
+    });
+
     it('no-op update does not create duplicate chunks when IDs unchanged', async () => {
       const courseDir = tempTestCourseDir.path;
 
       // Generate initial chunks for the test course.
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Capture baseline chunk set and counts
-      const initialChunks = await getAllChunksForCourse(courseId);
+      const initialChunks = await getAllChunksForCourse(course.id);
       const initialCount = initialChunks.length;
       const countBy = (pred: (c: any) => boolean) => initialChunks.filter(pred).length;
 
@@ -955,12 +1011,12 @@ describe('chunks', () => {
       // Run update again with no changes
       await chunksLib.updateChunksForCourse({
         coursePath: courseDir,
-        courseId,
-        courseData: await courseDB.loadFullCourse(courseId, courseDir),
+        courseId: course.id,
+        courseData: await courseDB.loadFullCourse(course.id, courseDir),
       });
 
       // Fetch again and ensure counts are unchanged
-      const afterChunks = await getAllChunksForCourse(courseId);
+      const afterChunks = await getAllChunksForCourse(course.id);
       const afterCount = afterChunks.length;
       assert.equal(afterCount, initialCount);
 

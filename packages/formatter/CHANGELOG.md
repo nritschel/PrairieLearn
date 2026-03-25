@@ -1,5 +1,60 @@
 # @prairielearn/formatter
 
+## 2.2.2
+
+### Patch Changes
+
+- 144cd19: Upgrade all JavaScript dependencies
+
+## 2.2.1
+
+### Patch Changes
+
+- 3c4799a: Upgrade all JavaScript dependencies
+
+## 2.2.0
+
+### Minor Changes
+
+- 3d31293: Add `truncateMiddle` function that truncates a string in the middle, preserving both the start and end to maintain recognizability
+
+## 2.1.0
+
+### Minor Changes
+
+- 9c91665: Add options for full part names and first only in formatInterval
+- 7b937fb: Remove unused exports, add `@knipignore` for intentionally public exports, and re-export newly used symbols from `@prairielearn/formatter`.
+
+## 2.0.2
+
+### Patch Changes
+
+- 8bdf6ea: Upgrade all JavaScript dependencies
+
+## 2.0.1
+
+### Patch Changes
+
+- f929a68: Replace lodash with es-toolkit
+
+## 2.0.0
+
+### Major Changes
+
+- 3914bb4: Upgrade to Node 24
+
+## 1.5.2
+
+### Patch Changes
+
+- 0900843: Switch to the `tsgo` compiler
+
+## 1.5.1
+
+### Patch Changes
+
+- 70a8029: Upgrade all JavaScript dependencies
+
 ## 1.5.0
 
 ### Minor Changes

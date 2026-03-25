@@ -78,10 +78,9 @@ You can extend the end date of the course instance to particular students by cre
 
 By default, only students that belong to the course's institution can access the course instance. You can use the `institution` property to allow access from other institutions. It can be set to `"Any"` to allow access from all institutions, or to a specific institution name, such as `"UIUC"`, or for LTI 1.1-linked courses, to `"LTI"`. For instance, you can use the following rule to allow students from any institution to access the course instance between the specified dates:
 
-!!! note "Planned deprecation"
+!!! warning "Deprecated"
 
-    The `institution` property is planned to be deprecated in the future alongside the release of our new self-enrollment system which has an equivalent feature. If you really need this control, then you should still use the `allowAccess` property.
-    <!-- Remove this note when the new system is released -->
+    The `institution` property in `allowAccess` is deprecated. Use the `selfEnrollment.restrictToInstitution` setting instead. See [enrollment controls](#enrollment-controls) for details.
 
 ```json title="infoCourseInstance.json"
 {
@@ -96,6 +95,14 @@ By default, only students that belong to the course's institution can access the
 ```
 
 ### Migrating from `allowAccess`
+
+!!! note
+
+    Most users will not need to migrate from `allowAccess` to publishing manually. Copying or creating a course instance in the UI will automatically switch to the new publishing system. If you would like to migrate manually, you can follow the steps below.
+
+!!! warning "LTI 1.1 courses should not migrate"
+
+    Courses using LTI 1.1 should not migrate to the new publishing system. LTI 1.1 requires an `allowAccess` rule with `"institution": "LTI"` to function properly.
 
 To migrate from `allowAccess` to publishing extensions:
 
@@ -154,23 +161,75 @@ To migrate from `allowAccess` to publishing extensions:
 
 ## Enrollment controls
 
-Students can enroll in a course instance through one of two ways:
+Students can enroll in a course instance through a few different ways:
 
 1. They can use a URL specific to the course instance or [to one of its assessments](../assessment/configuration.md#linking-to-assessments). You can find the "student link" on the "Settings" tab of the course instance. This link points students to the list of assessments associated to the course instance, enrolling them automatically in the course instance if they are not yet enrolled.
 
-2. They can use the "Add or remove courses" button on PrairieLearn's homepage. This button opens a page listing all course instances that are currently available for enrollment, giving students the option to add new courses.
+2. They can use a self-enrollment code. You can find the enrollment code on the "Settings" tab of the course instance after enabling "Use enrollment code for self-enrollment". Students can enroll in a course by clicking on the "Add course" button on their PrairieLearn homepage and entering the enrollment code.
 
-Some instructors may wish to hide their course from the list of available course instances. This may be done to provide a small level of control over which students get access to the course, or to avoid confusion in case of course instances that are not expected to be visible to students in general. For these instances, the following setting will hide the course instance from the list of instances on the add/remove courses page, even if the instance is available for enrollment.
+3. They can be invited to a course instance by an instructor. Instructors can invite students to a course instance by visiting the "Students" tab of the course instance and clicking the "Invite" button. Invites will show up on the student's PrairieLearn homepage.
+
+### Enrollment security
+
+There are a few settings that can be changed to control who can enroll in a course instance, and when they can enroll.
+
+#### Institution restrictions
+
+By default, only students that belong to the course's institution can access the course instance. If you want to allow all students to be able to enroll in the course instance, not just those in the same institution as the course instance, you can set the `restrictToInstitution` property to `false` in the `selfEnrollment` section of `infoCourseInstance.json`.
 
 ```json title="infoCourseInstance.json"
 {
-  "hideInEnrollPage": true
+  "selfEnrollment": {
+    "restrictToInstitution": false
+  }
 }
 ```
 
-!!! warning
+#### Rotating enrollment codes
 
-    _`hideInEnrollPage` is not a security setting_. Students may still enroll in the course instance if they get access to the URL, such as from a friend.
+If an enrollment code was spread to students outside of your course, you may want to revoke it. You can do this by clicking "Generate new self-enrollment link" on the "Settings" tab of the course instance. This will generate a new self-enrollment link and self-enrollment code and deactivate the old one.
+
+#### Disabling self-enrollment after a certain date
+
+If you want to disable self-enrollment after a certain date, you can set the `beforeDate` property to the date you want to disable self-enrollment on in the `selfEnrollment` section of `infoCourseInstance.json`. After this date, students will not be able to enroll themselves in the course instance, but they can still be invited.
+
+```json title="infoCourseInstance.json"
+{
+  "selfEnrollment": {
+    "beforeDate": "2025-12-31T23:59:59"
+  }
+}
+```
+
+!!! tip "Recommended use case"
+
+    You might want to set this setting to the University-imposed deadline for students to add courses.
+
+#### Completely disabling self-enrollment
+
+If you want to disable self-enrollment completely, you can set the `enabled` property to `false` in the `selfEnrollment` section of `infoCourseInstance.json`. This will mean that only invited students can enroll in the course instance, not via a direct link or enrollment code.
+
+```json title="infoCourseInstance.json"
+{
+  "selfEnrollment": {
+    "enabled": false
+  }
+}
+```
+
+### Individual student management
+
+!!! warning "Not available with legacy access control"
+
+    Individual student management features are not available for courses using legacy access control (`allowAccess`). To use these features, you must [migrate to the new publishing system](#migrating-from-allowaccess).
+
+#### Inviting students
+
+Students can be invited to a course instance by an instructor. Instructors can invite students to a course instance by visiting the "Students" tab of the course instance and clicking the "Invite" button. Invites will show up on the student's PrairieLearn homepage. If a student rejects an invitation, they can still join via a link to the course. However, the invitation will not show up on their homepage until they are re-invited. If an invited student accesses any link to the course (regardless of the current self-enrollment settings), they will automatically join the course.
+
+#### Blocking students
+
+If you want to remove students from a course instance, you can do this by visiting the individual student page and clicking the "Block" button. They will immediately be removed from the course instance and will no longer be able to enroll themselves in the course instance. If you later click "Unblock" on their page, they will be immediately re-enrolled in the course instance.
 
 ## Assessment page organization
 
@@ -195,6 +254,27 @@ The default timezone for course instances is the timezone of the course. This ca
 ```
 
 Allowable timezones are those in the TZ column in the [list of tz database time zones](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), which is a display version of the [IANA Time Zone Database](https://www.iana.org/time-zones).
+
+## Student labels
+
+Student labels let you organize students with colored badges. Use them for sections, TA assignments, accommodations, or any other grouping.
+
+To review configured labels and their assigned students, go to **Students → Labels**. Users with student data viewer access can view that page. Users who have both course editor and student data editor access can create, rename, delete, and assign labels there by entering UIDs. Student data editors can also apply existing labels from the main Students page using batch actions, or from an individual student's page.
+
+Labels appear in the student roster, gradebook, and student detail pages.
+
+??? note "Defining labels in JSON"
+
+    Labels can be defined in `infoCourseInstance.json`. Students must still be assigned to labels through the UI.
+
+    ```json title="infoCourseInstance.json"
+    {
+      "studentLabels": [
+        { "uuid": "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d", "name": "Section A", "color": "blue1" },
+        { "uuid": "b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e", "name": "Section B", "color": "green1" }
+      ]
+    }
+    ```
 
 ## LTI support
 

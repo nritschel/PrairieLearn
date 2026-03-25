@@ -6,27 +6,26 @@ import * as error from '@prairielearn/error';
 import { flash } from '@prairielearn/flash';
 import * as sqldb from '@prairielearn/postgres';
 import { run } from '@prairielearn/run';
+import { DateFromISOString, IdSchema } from '@prairielearn/zod';
 
 import { calculateAiGradingStats } from '../../../ee/lib/ai-grading/ai-grading-stats.js';
 import {
+  containsImageCapture,
   selectLastSubmissionId,
   selectRubricGradingItems,
   toggleAiGradingMode,
 } from '../../../ee/lib/ai-grading/ai-grading-util.js';
-import type { InstanceQuestionAIGradingInfo } from '../../../ee/lib/ai-grading/types.js';
+import type {
+  InstanceQuestionAIGradingInfo,
+  InstanceQuestionAIGradingInfoBase,
+} from '../../../ee/lib/ai-grading/types.js';
 import {
   selectAssessmentQuestionHasInstanceQuestionGroups,
   selectInstanceQuestionGroup,
   selectInstanceQuestionGroups,
   updateManualInstanceQuestionGroup,
 } from '../../../ee/lib/ai-instance-question-grouping/ai-instance-question-grouping-util.js';
-import {
-  AiGradingJobSchema,
-  DateFromISOString,
-  GradingJobSchema,
-  IdSchema,
-  type InstanceQuestion,
-} from '../../../lib/db-types.js';
+import { AiGradingJobSchema, GradingJobSchema } from '../../../lib/db-types.js';
 import { features } from '../../../lib/features/index.js';
 import { idsEqual } from '../../../lib/id.js';
 import { reportIssueFromForm } from '../../../lib/issues.js';
@@ -51,13 +50,13 @@ const sql = sqldb.loadSqlEquiv(import.meta.url);
 
 async function prepareLocalsForRender(
   query: Record<string, any>,
-  resLocals: ResLocalsForPage['instructor-instance-question'],
+  resLocals: ResLocalsForPage<'instructor-instance-question'>,
 ) {
   // Even though getAndRenderVariant will select variants for the instance question, if the
   // question has multiple variants, by default getAndRenderVariant may select a variant without
   // submissions or even create a new one. We don't want that behavior, so we select the last
   // submission and pass it along to getAndRenderVariant explicitly.
-  const variant_with_submission_id = await sqldb.queryOptionalRow(
+  const variant_with_submission_id = await sqldb.queryOptionalScalar(
     sql.select_variant_with_last_submission,
     { instance_question_id: resLocals.instance_question.id },
     IdSchema,
@@ -86,7 +85,9 @@ async function prepareLocalsForRender(
   }
 
   const graders = await selectCourseInstanceGraderStaff({
-    course_instance: resLocals.course_instance,
+    courseInstance: resLocals.course_instance,
+    authzData: resLocals.authz_data,
+    requiredRole: ['Student Data Viewer'],
   });
   return { resLocals, conflict_grading_job, graders };
 }
@@ -105,7 +106,7 @@ router.get(
       ? await selectUserById(res.locals.instance_question.last_grader)
       : null;
 
-    const instance_question = res.locals.instance_question as InstanceQuestion;
+    const instance_question = res.locals.instance_question;
 
     const instanceQuestionGroup = await run(async () => {
       if (instance_question.manual_instance_question_group_id) {
@@ -130,6 +131,8 @@ router.get(
      */
     let aiGradingInfo: InstanceQuestionAIGradingInfo | undefined = undefined;
 
+    const localsForRender = await prepareLocalsForRender(req.query, res.locals);
+
     if (aiGradingEnabled) {
       const submission_id = await selectLastSubmissionId(instance_question.id);
       const ai_grading_job_data = await sqldb.queryOptionalRow(
@@ -142,6 +145,7 @@ router.get(
           manual_rubric_grading_id: GradingJobSchema.shape.manual_rubric_grading_id,
           prompt: AiGradingJobSchema.shape.prompt,
           completion: AiGradingJobSchema.shape.completion,
+          rotation_correction_degrees: AiGradingJobSchema.shape.rotation_correction_degrees,
         }),
       );
 
@@ -153,7 +157,7 @@ router.get(
 
         /** The submission was also manually graded if a manual grading job exists for it.*/
         const submissionManuallyGraded =
-          (await sqldb.queryOptionalRow(
+          (await sqldb.queryOptionalScalar(
             sql.select_exists_manual_grading_job_for_submission,
             { submission_id },
             z.boolean(),
@@ -205,20 +209,65 @@ router.get(
           return null;
         });
 
-        aiGradingInfo = {
+        const correctedDegrees = ai_grading_job_data.rotation_correction_degrees;
+        const parsed = z.record(z.string(), z.number()).safeParse(correctedDegrees ?? {});
+        const validatedDegrees = parsed.success ? parsed.data : {};
+        const rotationCorrectionDegrees = Object.fromEntries(
+          Object.entries(validatedDegrees).filter(([, degrees]) => degrees !== 0),
+        );
+
+        const hasPersistedRotationCorrectionData =
+          correctedDegrees != null &&
+          typeof correctedDegrees === 'object' &&
+          Object.keys(correctedDegrees).length > 0;
+
+        const hasImage = run(() => {
+          // Use persisted rotation metadata to infer image context. This preserves
+          // historical AI grading context even if the current rendered HTML no
+          // longer includes image-capture markers.
+          if (hasPersistedRotationCorrectionData) return true;
+          if (localsForRender.resLocals.submissionHtmls.length > 0) {
+            return containsImageCapture(localsForRender.resLocals.submissionHtmls[0]);
+          }
+          return false;
+        });
+
+        const aiGradingInfoBase: InstanceQuestionAIGradingInfoBase = {
           submissionManuallyGraded,
           prompt: formattedPrompt,
           selectedRubricItemIds: selectedRubricItems.map((item) => item.id),
           explanation,
         };
+
+        if (hasImage) {
+          aiGradingInfo = {
+            ...aiGradingInfoBase,
+            hasImage: true,
+            rotationCorrectionDegrees,
+          };
+        } else {
+          aiGradingInfo = {
+            ...aiGradingInfoBase,
+            hasImage: false,
+            rotationCorrectionDegrees: null,
+          };
+        }
       }
     }
 
     req.session.skip_graded_submissions = req.session.skip_graded_submissions ?? true;
+    req.session.show_submissions_assigned_to_me_only =
+      req.session.show_submissions_assigned_to_me_only ?? true;
+
+    const submissionCredits = await sqldb.queryScalars(
+      sql.select_submission_credit_values,
+      { assessment_instance_id: res.locals.assessment_instance.id },
+      z.number(),
+    );
 
     res.send(
       InstanceQuestionPage({
-        ...(await prepareLocalsForRender(req.query, res.locals)),
+        ...localsForRender,
         assignedGrader,
         lastGrader,
         selectedInstanceQuestionGroup: instanceQuestionGroup,
@@ -231,6 +280,8 @@ router.get(
             ? await calculateAiGradingStats(res.locals.assessment_question)
             : null,
         skipGradedSubmissions: req.session.skip_graded_submissions,
+        showSubmissionsAssignedToMeOnly: req.session.show_submissions_assigned_to_me_only,
+        submissionCredits,
       }),
     );
   }),
@@ -295,17 +346,36 @@ router.get(
   typedAsyncHandler<'instructor-instance-question'>(async (req, res) => {
     try {
       const locals = await prepareLocalsForRender({}, res.locals);
+      const rubric_data = await manualGrading.selectRubricData({
+        assessment_question: res.locals.assessment_question,
+      });
       const gradingPanel = GradingPanel({
         ...locals,
         context: 'main',
       }).toString();
-      const rubric_data = await manualGrading.selectRubricData({
-        assessment_question: res.locals.assessment_question,
-      });
       const aiGradingEnabled = await features.enabledFromLocals('ai-grading', res.locals);
+
+      // `prepareLocalsForRender` guarantees a submission exists.
+      const submission = res.locals.submission!;
+      const panels = await renderPanelsForSubmission({
+        unsafe_submission_id: submission.id,
+        question: res.locals.question,
+        instance_question: res.locals.instance_question,
+        variant: res.locals.variant,
+        user: res.locals.user,
+        urlPrefix: res.locals.urlPrefix,
+        questionContext: 'manual_grading',
+        questionRenderContext: 'manual_grading',
+        authorizedEdit: false,
+        renderScorePanels: false,
+        groupRolePermissions: null,
+      });
+
       res.json({
         gradingPanel,
         rubric_data,
+        submissionPanel: panels.submissionPanel,
+        submissionId: submission.id,
         aiGradingStats:
           aiGradingEnabled && res.locals.assessment_question.ai_grading_mode
             ? await calculateAiGradingStats(res.locals.assessment_question)
@@ -345,6 +415,7 @@ const PostBodySchema = z.union([
         val == null ? [] : typeof val === 'string' ? [val] : Object.values(val),
       ),
     skip_graded_submissions: z.preprocess((val) => val === 'true', z.boolean()),
+    show_submissions_assigned_to_me_only: z.preprocess((val) => val === 'true', z.boolean()),
   }),
   z.object({
     __action: z.literal('modify_rubric_settings'),
@@ -354,6 +425,7 @@ const PostBodySchema = z.union([
     min_points: z.coerce.number(),
     max_extra_points: z.coerce.number(),
     tag_for_manual_grading: z.boolean().default(false),
+    grader_guidelines: z.string().nullable(),
     rubric_items: z
       .array(
         z.object({
@@ -372,6 +444,8 @@ const PostBodySchema = z.union([
     __action: z.custom<`reassign_${string}`>(
       (val) => typeof val === 'string' && val.startsWith('reassign_'),
     ),
+    skip_graded_submissions: z.preprocess((val) => val === 'true', z.boolean()),
+    show_submissions_assigned_to_me_only: z.preprocess((val) => val === 'true', z.boolean()),
   }),
   z.object({
     __action: z.literal('report_issue'),
@@ -386,13 +460,17 @@ const PostBodySchema = z.union([
 router.post(
   '/',
   asyncHandler(async (req, res) => {
-    if (!res.locals.authz_data.has_course_instance_permission_edit) {
+    const body = PostBodySchema.parse(req.body);
+    if (body.__action === 'next_instance_question') {
+      if (!res.locals.authz_data.has_course_instance_permission_view) {
+        throw new error.HttpStatusError(403, 'Access denied (must be a student data viewer)');
+      }
+    } else if (!res.locals.authz_data.has_course_instance_permission_edit) {
       throw new error.HttpStatusError(403, 'Access denied (must be a student data editor)');
     }
-
-    const body = PostBodySchema.parse(req.body);
     if (body.__action === 'add_manual_grade') {
       req.session.skip_graded_submissions = body.skip_graded_submissions;
+      req.session.show_submissions_assigned_to_me_only = body.show_submissions_assigned_to_me_only;
 
       const manual_rubric_data = res.locals.assessment_question.manual_rubric_id
         ? {
@@ -404,12 +482,12 @@ router.post(
           }
         : undefined;
       const { modified_at_conflict, grading_job_id } =
-        await manualGrading.updateInstanceQuestionScore(
-          res.locals.assessment,
-          res.locals.instance_question.id,
-          body.submission_id,
-          body.modified_at, // check_modified_at
-          {
+        await manualGrading.updateInstanceQuestionScore({
+          assessment: res.locals.assessment,
+          instance_question_id: res.locals.instance_question.id,
+          submission_id: body.submission_id,
+          check_modified_at: body.modified_at,
+          score: {
             manual_score_perc: body.use_score_perc ? body.score_manual_percent : null,
             manual_points: body.use_score_perc ? null : body.score_manual_points,
             auto_score_perc: body.use_score_perc ? body.score_auto_percent : null,
@@ -417,8 +495,8 @@ router.post(
             feedback: { manual: body.submission_note },
             manual_rubric_data,
           },
-          res.locals.authn_user.user_id,
-        );
+          authn_user_id: res.locals.authn_user.id,
+        });
 
       if (modified_at_conflict) {
         return res.redirect(req.baseUrl + `?conflict_grading_job_id=${grading_job_id}`);
@@ -428,7 +506,7 @@ router.post(
         await sqldb.execute(sql.close_issues_for_instance_question, {
           issue_ids: body.unsafe_issue_ids_close,
           instance_question_id: res.locals.instance_question.id,
-          authn_user_id: res.locals.authn_user.user_id,
+          authn_user_id: res.locals.authn_user.id,
         });
       }
 
@@ -449,14 +527,16 @@ router.post(
           urlPrefix: res.locals.urlPrefix,
           assessment_id: res.locals.assessment.id,
           assessment_question_id: res.locals.assessment_question.id,
-          user_id: res.locals.authz_data.user.user_id,
+          user_id: res.locals.authz_data.user.id,
           prior_instance_question_id: res.locals.instance_question.id,
           skip_graded_submissions: req.session.skip_graded_submissions,
+          show_submissions_assigned_to_me_only: req.session.show_submissions_assigned_to_me_only,
           use_instance_question_groups,
         }),
       );
     } else if (body.__action === 'next_instance_question') {
       req.session.skip_graded_submissions = body.skip_graded_submissions;
+      req.session.show_submissions_assigned_to_me_only = body.show_submissions_assigned_to_me_only;
 
       const use_instance_question_groups = await run(async () => {
         const aiGradingMode =
@@ -475,9 +555,10 @@ router.post(
           urlPrefix: res.locals.urlPrefix,
           assessment_id: res.locals.assessment.id,
           assessment_question_id: res.locals.assessment_question.id,
-          user_id: res.locals.authz_data.user.user_id,
+          user_id: res.locals.authz_data.user.id,
           prior_instance_question_id: res.locals.instance_question.id,
           skip_graded_submissions: req.session.skip_graded_submissions,
+          show_submissions_assigned_to_me_only: req.session.show_submissions_assigned_to_me_only,
           use_instance_question_groups,
         }),
       );
@@ -485,6 +566,9 @@ router.post(
       body.__action === 'add_manual_grade_for_instance_question_group_ungraded' ||
       body.__action === 'add_manual_grade_for_instance_question_group'
     ) {
+      req.session.skip_graded_submissions = body.skip_graded_submissions;
+      req.session.show_submissions_assigned_to_me_only = body.show_submissions_assigned_to_me_only;
+
       const aiGradingEnabled = await features.enabledFromLocals('ai-grading', res.locals);
 
       if (!aiGradingEnabled) {
@@ -550,12 +634,12 @@ router.post(
         : undefined;
 
       for (const instanceQuestion of instanceQuestionsInGroup) {
-        const { modified_at_conflict } = await manualGrading.updateInstanceQuestionScore(
-          res.locals.assessment,
-          instanceQuestion.instance_question_id,
-          instanceQuestion.submission_id,
-          null,
-          {
+        const { modified_at_conflict } = await manualGrading.updateInstanceQuestionScore({
+          assessment: res.locals.assessment,
+          instance_question_id: instanceQuestion.instance_question_id,
+          submission_id: instanceQuestion.submission_id,
+          check_modified_at: null,
+          score: {
             manual_score_perc: body.use_score_perc ? body.score_manual_percent : null,
             manual_points: body.use_score_perc ? null : body.score_manual_points,
             auto_score_perc: body.use_score_perc ? body.score_auto_percent : null,
@@ -563,8 +647,8 @@ router.post(
             feedback: { manual: body.submission_note },
             manual_rubric_data,
           },
-          res.locals.authn_user.user_id,
-        );
+          authn_user_id: res.locals.authn_user.id,
+        });
 
         if (modified_at_conflict) {
           flash('error', 'A conflict occurred while grading the submission. Please try again.');
@@ -582,38 +666,48 @@ router.post(
           urlPrefix: res.locals.urlPrefix,
           assessment_id: res.locals.assessment.id,
           assessment_question_id: res.locals.assessment_question.id,
-          user_id: res.locals.authz_data.user.user_id,
+          user_id: res.locals.authz_data.user.id,
           prior_instance_question_id: res.locals.instance_question.id,
           skip_graded_submissions: req.session.skip_graded_submissions,
+          show_submissions_assigned_to_me_only: req.session.show_submissions_assigned_to_me_only,
           use_instance_question_groups: true,
         }),
       );
     } else if (body.__action === 'modify_rubric_settings') {
       try {
-        await manualGrading.updateAssessmentQuestionRubric(
-          res.locals.assessment,
-          res.locals.instance_question.assessment_question_id,
-          body.use_rubric,
-          body.replace_auto_points,
-          body.starting_points,
-          body.min_points,
-          body.max_extra_points,
-          body.rubric_items,
-          body.tag_for_manual_grading,
-          res.locals.authn_user.user_id,
-        );
+        await manualGrading.updateAssessmentQuestionRubric({
+          assessment: res.locals.assessment,
+          assessment_question_id: res.locals.instance_question.assessment_question_id,
+          use_rubric: body.use_rubric,
+          replace_auto_points: body.replace_auto_points,
+          starting_points: body.starting_points,
+          min_points: body.min_points,
+          max_extra_points: body.max_extra_points,
+          rubric_items: body.rubric_items,
+          tag_for_manual_grading: body.tag_for_manual_grading,
+          grader_guidelines: body.grader_guidelines,
+          authn_user_id: res.locals.authn_user.id,
+        });
         res.redirect(req.baseUrl + '/grading_rubric_panels');
       } catch (err) {
         res.status(500).send({ err: String(err) });
       }
+    } else if (body.__action === 'report_issue') {
+      await reportIssueFromForm(req, res);
+      res.redirect(req.originalUrl);
+    } else if (body.__action === 'toggle_ai_grading_mode') {
+      await toggleAiGradingMode(res.locals.assessment_question.id);
+      res.redirect(req.originalUrl);
     } else if (typeof body.__action === 'string' && body.__action.startsWith('reassign_')) {
       const actionPrompt = body.__action.slice(9);
       const assigned_grader = ['nobody', 'graded'].includes(actionPrompt) ? null : actionPrompt;
       if (assigned_grader != null) {
         const courseStaff = await selectCourseInstanceGraderStaff({
-          course_instance: res.locals.course_instance,
+          courseInstance: res.locals.course_instance,
+          authzData: res.locals.authz_data,
+          requiredRole: ['Student Data Editor'],
         });
-        if (!courseStaff.some((staff) => idsEqual(staff.user_id, assigned_grader))) {
+        if (!courseStaff.some((staff) => idsEqual(staff.id, assigned_grader))) {
           throw new error.HttpStatusError(
             400,
             'Assigned grader does not have Student Data Editor permission',
@@ -627,6 +721,8 @@ router.post(
       });
 
       req.session.skip_graded_submissions = req.session.skip_graded_submissions ?? true;
+      req.session.show_submissions_assigned_to_me_only =
+        req.session.show_submissions_assigned_to_me_only ?? true;
 
       const use_instance_question_groups = await run(async () => {
         const aiGradingMode =
@@ -640,23 +736,21 @@ router.post(
         });
       });
 
+      req.session.skip_graded_submissions = body.skip_graded_submissions;
+      req.session.show_submissions_assigned_to_me_only = body.show_submissions_assigned_to_me_only;
+
       res.redirect(
         await manualGrading.nextInstanceQuestionUrl({
           urlPrefix: res.locals.urlPrefix,
           assessment_id: res.locals.assessment.id,
           assessment_question_id: res.locals.assessment_question.id,
-          user_id: res.locals.authz_data.user.user_id,
+          user_id: res.locals.authz_data.user.id,
           prior_instance_question_id: res.locals.instance_question.id,
           skip_graded_submissions: req.session.skip_graded_submissions,
+          show_submissions_assigned_to_me_only: req.session.show_submissions_assigned_to_me_only,
           use_instance_question_groups,
         }),
       );
-    } else if (body.__action === 'report_issue') {
-      await reportIssueFromForm(req, res);
-      res.redirect(req.originalUrl);
-    } else if (body.__action === 'toggle_ai_grading_mode') {
-      await toggleAiGradingMode(res.locals.assessment_question.id);
-      res.redirect(req.originalUrl);
     } else {
       throw new error.HttpStatusError(400, `unknown __action: ${req.body.__action}`);
     }

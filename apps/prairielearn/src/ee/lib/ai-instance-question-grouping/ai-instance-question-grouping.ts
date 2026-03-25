@@ -4,19 +4,20 @@ import * as async from 'async';
 import { z } from 'zod';
 
 import { HttpStatusError } from '@prairielearn/error';
+import { assertNever } from '@prairielearn/utils';
 
-import { type OpenAIModelId, formatPrompt, logResponseUsage } from '../../../lib/ai.js';
-import { config } from '../../../lib/config.js';
+import { type OpenAIModelId, formatPrompt, logResponseUsage } from '../../../lib/ai-util.js';
 import type {
   AssessmentQuestion,
   Course,
+  CourseInstance,
   InstanceQuestion,
   Question,
 } from '../../../lib/db-types.js';
 import { buildQuestionUrls } from '../../../lib/question-render.js';
 import { createServerJob } from '../../../lib/server-jobs.js';
-import { assertNever } from '../../../lib/types.js';
 import * as questionServers from '../../../question-servers/index.js';
+import { resolveAiGradingKeys } from '../ai-grading/ai-grading-credentials.js';
 import {
   generateSubmissionMessage,
   selectInstanceQuestionsForAssessmentQuestion,
@@ -62,15 +63,15 @@ async function aiEvaluateStudentResponse({
     questionRenderContext: 'ai_grading',
   };
   const questionModule = questionServers.getModule(question.type);
-  const render_submission_results = await questionModule.render(
-    { question: false, submissions: true, answer: true },
+  const render_submission_results = await questionModule.render({
+    renderSelection: { question: false, submissions: true, answer: true },
     variant,
     question,
     submission,
-    [submission],
+    submissions: [submission],
     course,
     locals,
-  );
+  });
 
   const answer_text = render_submission_results.data.answerHtml;
   const submission_text = render_submission_results.data.submissionHtmls[0];
@@ -158,7 +159,7 @@ async function aiEvaluateStudentResponse({
  */
 export async function aiInstanceQuestionGrouping({
   course,
-  course_instance_id,
+  course_instance,
   question,
   assessment_question,
   urlPrefix,
@@ -170,7 +171,7 @@ export async function aiInstanceQuestionGrouping({
 }: {
   question: Question;
   course: Course;
-  course_instance_id: string;
+  course_instance: CourseInstance;
   assessment_question: AssessmentQuestion;
   urlPrefix: string;
   authn_user_id: string;
@@ -183,34 +184,37 @@ export async function aiInstanceQuestionGrouping({
    */
   instance_question_ids?: string[];
 }) {
-  if (!config.aiGradingOpenAiApiKey || !config.aiGradingOpenAiOrganization) {
-    throw new HttpStatusError(403, 'Feature not available.');
+  if (!assessment_question.max_manual_points) {
+    throw new HttpStatusError(
+      400,
+      'AI submission grouping is only available on assessment questions that use manual grading.',
+    );
   }
 
-  const openai = createOpenAI({
-    apiKey: config.aiGradingOpenAiApiKey,
-    organization: config.aiGradingOpenAiOrganization,
+  const resolvedKeys = await resolveAiGradingKeys(course_instance);
+  if (!resolvedKeys.openai) {
+    throw new HttpStatusError(403, 'AI submission grouping requires an OpenAI API key.');
+  }
+
+  const openAi = createOpenAI({
+    apiKey: resolvedKeys.openai.apiKey,
+    organization: resolvedKeys.openai.organization ?? undefined,
   });
-  const model = openai(INSTANCE_QUESTION_GROUPING_OPENAI_MODEL);
+  const model = openAi(INSTANCE_QUESTION_GROUPING_OPENAI_MODEL);
 
   const serverJob = await createServerJob({
-    courseId: course.id,
-    courseInstanceId: course_instance_id,
-    assessmentId: assessment_question.assessment_id,
-    authnUserId: authn_user_id,
-    userId: user_id,
     type: 'ai_instance_question_grouping',
     description: 'Perform AI submission grouping',
+    userId: user_id,
+    authnUserId: authn_user_id,
+    courseId: course.id,
+    courseInstanceId: course_instance.id,
+    assessmentId: assessment_question.assessment_id,
   });
 
   const instanceQuestionIdsSet = new Set<string>(instance_question_ids);
 
   serverJob.executeInBackground(async (job) => {
-    if (!assessment_question.max_manual_points) {
-      job.fail('The assessment question has no manual grading');
-      return;
-    }
-
     const allInstanceQuestions = await selectInstanceQuestionsForAssessmentQuestion({
       assessment_question_id: assessment_question.id,
       closed_instance_questions_only,
@@ -263,7 +267,7 @@ export async function aiInstanceQuestionGrouping({
     ) => {
       const responseIsLikelyCorrect = await aiEvaluateStudentResponse({
         course,
-        course_instance_id,
+        course_instance_id: course_instance.id,
         question,
         assessment_question,
         instance_question,
@@ -287,7 +291,7 @@ export async function aiInstanceQuestionGrouping({
     const instance_question_grouping_successes = await async.mapLimit(
       selectedInstanceQuestions,
       PARALLEL_INSTANCE_QUESTION_GROUPING_LIMIT,
-      async (instanceQuestion) => {
+      async (instanceQuestion: InstanceQuestion) => {
         const logs: AIGradingLog[] = [];
         const logger: AIGradingLogger = {
           info: (msg: string) => {
@@ -310,7 +314,7 @@ export async function aiInstanceQuestionGrouping({
             instanceQuestion,
             logger,
           );
-        } catch (err) {
+        } catch (err: any) {
           logger.error(err);
         } finally {
           for (const log of logs) {

@@ -166,7 +166,7 @@ BEGIN
             require_honor_code = (valid_assessment.data->>'require_honor_code')::boolean,
             honor_code = valid_assessment.data->>'honor_code',
             allow_personal_notes = (valid_assessment.data->>'allow_personal_notes')::boolean,
-            group_work = (valid_assessment.data->>'group_work')::boolean,
+            team_work = (valid_assessment.data->>'team_work')::boolean,
             advance_score_perc = (valid_assessment.data->>'advance_score_perc')::double precision,
             json_grade_rate_minutes = (valid_assessment.data->>'grade_rate_minutes')::double precision,
             json_can_view = ARRAY(SELECT * FROM JSONB_ARRAY_ELEMENTS_TEXT(valid_assessment.data->'json_can_view')),
@@ -192,9 +192,9 @@ BEGIN
         RETURNING id INTO new_assessment_id;
         new_assessment_ids = array_append(new_assessment_ids, new_assessment_id);
 
-        -- if it is a group work try to insert a group_config
-        IF (valid_assessment.data->>'group_work')::boolean THEN
-            INSERT INTO group_configs (
+        -- if it is a group work try to insert a team_config
+        IF (valid_assessment.data->>'team_work')::boolean THEN
+            INSERT INTO team_configs (
                 course_instance_id,
                 assessment_id,
                 maximum,
@@ -228,7 +228,7 @@ BEGIN
 
             -- Insert all group roles
             FOR group_role IN SELECT * FROM JSONB_ARRAY_ELEMENTS(valid_assessment.data->'groupRoles') LOOP
-                INSERT INTO group_roles (
+                INSERT INTO team_roles (
                     role_name,
                     assessment_id,
                     minimum,
@@ -248,18 +248,18 @@ BEGIN
                     minimum = EXCLUDED.minimum,
                     maximum = EXCLUDED.maximum,
                     can_assign_roles = EXCLUDED.can_assign_roles
-                RETURNING group_roles.role_name INTO new_group_role_name;
+                RETURNING team_roles.role_name INTO new_group_role_name;
                 new_group_role_names := array_append(new_group_role_names, new_group_role_name);
             END LOOP;
 
             -- Delete excess group roles
-            DELETE FROM group_roles
+            DELETE FROM team_roles
             WHERE
                 assessment_id = new_assessment_id
                 AND role_name != ALL (new_group_role_names);
 
         ELSE
-            UPDATE group_configs
+            UPDATE team_configs
             SET deleted_at = now()
             WHERE assessment_id = new_assessment_id;
         END IF;
@@ -335,6 +335,7 @@ BEGIN
                 max_points,
                 number_choose,
                 best_questions,
+                lockpoint,
                 advance_score_perc,
                 json_allow_real_time_grading,
                 json_grade_rate_minutes,
@@ -349,6 +350,7 @@ BEGIN
                 (zone->>'max_points')::double precision,
                 (zone->>'number_choose')::integer,
                 (zone->>'best_questions')::integer,
+                (zone->>'lockpoint')::boolean,
                 (zone->>'advance_score_perc')::double precision,
                 (zone->>'allow_real_time_grading')::boolean,
                 (zone->>'grade_rate_minutes')::double precision,
@@ -362,6 +364,7 @@ BEGIN
                 max_points = EXCLUDED.max_points,
                 number_choose = EXCLUDED.number_choose,
                 best_questions = EXCLUDED.best_questions,
+                lockpoint = EXCLUDED.lockpoint,
                 advance_score_perc = EXCLUDED.advance_score_perc,
                 json_allow_real_time_grading = EXCLUDED.json_allow_real_time_grading,
                 json_grade_rate_minutes = EXCLUDED.json_grade_rate_minutes,
@@ -490,7 +493,8 @@ BEGIN
                         json_max_points,
                         json_max_auto_points,
                         json_force_max_points,
-                        json_tries_per_variant
+                        json_tries_per_variant,
+                        preferences
                     ) VALUES (
                         (assessment_question->>'number')::integer,
                         COALESCE(computed_manual_points, 0) + COALESCE(computed_max_auto_points, 0),
@@ -518,7 +522,8 @@ BEGIN
                         (assessment_question->>'json_max_points')::double precision,
                         (assessment_question->>'json_max_auto_points')::double precision,
                         (assessment_question->>'json_force_max_points')::boolean,
-                        (assessment_question->>'json_tries_per_variant')::integer
+                        (assessment_question->>'json_tries_per_variant')::integer,
+                        (assessment_question->'preferences')
                     )                     ON CONFLICT (question_id, assessment_id) DO UPDATE
                     SET
                         number = EXCLUDED.number,
@@ -546,15 +551,16 @@ BEGIN
                         json_max_points = EXCLUDED.json_max_points,
                         json_max_auto_points = EXCLUDED.json_max_auto_points,
                         json_force_max_points = EXCLUDED.json_force_max_points,
-                        json_tries_per_variant = EXCLUDED.json_tries_per_variant
+                        json_tries_per_variant = EXCLUDED.json_tries_per_variant,
+                        preferences = EXCLUDED.preferences
                     RETURNING aq.id INTO new_assessment_question_id;
                     new_assessment_question_ids := array_append(new_assessment_question_ids, new_assessment_question_id);
 
                     -- If the assessment is configured as group work, sync the role permissions.
-                    IF (valid_assessment.data->>'group_work')::boolean THEN
+                    IF (valid_assessment.data->>'team_work')::boolean THEN
                         INSERT INTO assessment_question_role_permissions (
                             assessment_question_id,
-                            group_role_id,
+                            team_role_id,
                             can_view,
                             can_submit
                         ) SELECT
@@ -562,9 +568,9 @@ BEGIN
                             gr.id,
                             (gr.role_name IN (SELECT * FROM JSONB_ARRAY_ELEMENTS_TEXT(assessment_question->'can_view'))),
                             (gr.role_name IN (SELECT * FROM JSONB_ARRAY_ELEMENTS_TEXT(assessment_question->'can_submit')))
-                        FROM group_roles AS gr
+                        FROM team_roles AS gr
                         WHERE gr.assessment_id = new_assessment_id
-                        ON CONFLICT (assessment_question_id, group_role_id)
+                        ON CONFLICT (assessment_question_id, team_role_id)
                         DO UPDATE
                         SET
                             can_view = EXCLUDED.can_view,
@@ -683,6 +689,18 @@ BEGIN
         aar.assessment_id = a.id
         AND a.deleted_at IS NOT NULL
         AND a.course_instance_id = syncing_course_instance_id;
+
+    -- Delete JSON-synced access control rules for soft-deleted assessments.
+    -- Enrollment rules (target_type = 'enrollment') are deliberately kept so
+    -- that if an instructor restores a soft-deleted assessment, the enrollment-
+    -- specific rules (which are not persisted in JSON) come back automatically.
+    DELETE FROM assessment_access_control_rules AS aacr
+    USING assessments AS a
+    WHERE
+        aacr.assessment_id = a.id
+        AND a.deleted_at IS NOT NULL
+        AND a.course_instance_id = syncing_course_instance_id
+        AND aacr.target_type IN ('none', 'student_label');
 
     -- Delete unused zones
     DELETE FROM zones AS z

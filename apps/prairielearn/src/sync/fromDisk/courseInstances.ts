@@ -3,9 +3,9 @@ import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 
 import * as sqldb from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
 
 import { config } from '../../lib/config.js';
-import { IdSchema } from '../../lib/db-types.js';
 import { type CourseInstanceJson } from '../../schemas/index.js';
 import { type CourseData } from '../course-db.js';
 import { isDateInFuture } from '../dates.js';
@@ -16,7 +16,7 @@ const sql = sqldb.loadSqlEquiv(import.meta.filename);
 export async function uniqueEnrollmentCode() {
   while (true) {
     const enrollmentCode = generateEnrollmentCode();
-    const existingEnrollmentCode = await sqldb.queryOptionalRow(
+    const existingEnrollmentCode = await sqldb.queryOptionalScalar(
       sql.select_existing_enrollment_code,
       { enrollment_code: enrollmentCode },
       z.string(),
@@ -60,13 +60,13 @@ function getParamsForCourseInstance(courseInstance: CourseInstanceJson | null | 
     long_name: courseInstance.longName,
     assessments_group_by: courseInstance.groupAssessmentsBy,
     display_timezone: courseInstance.timezone ?? null,
-    hide_in_enroll_page: courseInstance.hideInEnrollPage,
     comment: JSON.stringify(courseInstance.comment),
     modern_publishing: accessRules == null,
     publishing_start_date: courseInstance.publishing?.startDate ?? null,
     publishing_end_date: courseInstance.publishing?.endDate ?? null,
     self_enrollment_enabled: courseInstance.selfEnrollment.enabled,
     self_enrollment_enabled_before_date: courseInstance.selfEnrollment.beforeDate,
+    self_enrollment_restrict_to_institution: courseInstance.selfEnrollment.restrictToInstitution,
     self_enrollment_use_enrollment_code: courseInstance.selfEnrollment.useEnrollmentCode,
     share_source_publicly: courseInstance.shareSourcePublicly,
     access_rules: accessRules ?? [],
@@ -85,7 +85,7 @@ export async function sync(
       .filter((institution) => institution != null);
 
     // Select only the valid institution names.
-    const validInstitutions = await sqldb.queryRows(
+    const validInstitutions = await sqldb.queryScalars(
       sql.select_valid_institution_short_names,
       { short_names: Array.from(new Set(institutions)) },
       z.string(),
@@ -131,7 +131,7 @@ export async function sync(
     }),
   );
 
-  const result = await sqldb.callRow(
+  const result = await sqldb.callScalar(
     'sync_course_instances',
     [courseInstanceParams, courseId],
     z.record(z.string(), IdSchema),

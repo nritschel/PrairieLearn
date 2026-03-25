@@ -8,6 +8,9 @@ import {
   zodToJsonSchema,
 } from 'zod-to-json-schema';
 
+import { DatetimeLocalStringSchema } from '@prairielearn/zod';
+
+import { AccessControlJsonSchema, DeadlineEntryJsonSchema } from './accessControl.js';
 import { CommentJsonSchema } from './comment.js';
 import {
   AdvanceScorePercJsonSchema,
@@ -15,21 +18,22 @@ import {
   type AssessmentJson,
   AssessmentJsonSchema,
   ForceMaxPointsJsonSchema,
-  GroupRoleJsonSchema,
+  GroupsRoleJsonSchema,
+  LegacyGroupRoleJsonSchema,
   PointsJsonSchema,
   PointsListJsonSchema,
   PointsSingleJsonSchema,
   QuestionAlternativeJsonSchema,
   QuestionIdJsonSchema,
+  QuestionPreferencesJsonSchema,
   ZoneAssessmentJsonSchema,
-  ZoneQuestionJsonSchema,
+  ZoneQuestionBlockJsonSchema,
 } from './infoAssessment.js';
 import { ColorJsonSchema, type CourseJson, CourseJsonSchema } from './infoCourse.js';
 import { type CourseInstanceJson, CourseInstanceJsonSchema } from './infoCourseInstance.js';
 import { type ElementCoreJson, ElementCoreJsonSchema } from './infoElementCore.js';
 import { type ElementCourseJson, ElementCourseJsonSchema } from './infoElementCourse.js';
 import { type ElementExtensionJson, ElementExtensionJsonSchema } from './infoElementExtension.js';
-import { type NewsItemJson, NewsItemJsonSchema } from './infoNewsItem.js';
 import { type QuestionJson, QuestionJsonSchema } from './infoQuestion.js';
 import {
   type QuestionOptionsCalculationJson,
@@ -54,11 +58,11 @@ import {
 import { type QuestionOptionsv3Json, QuestionOptionsv3JsonSchema } from './questionOptionsv3.js';
 
 /**
- * Rewrite the group role annotation for canView and canSubmit fields.
+ * Override certain fields in the JSON schema.
  * zod-to-json-schema doesn't support a concept of unique items in an array (only sets),
- * so we need to override the schema.
+ * so we need to override the schema for canView, canSubmit, and roles fields.
  */
-const rewriteGroupRoleAnnotation = (
+const schemaOverride = (
   def: ZodTypeDef,
   refs: Refs,
 ): JsonSchema7Type | undefined | typeof ignoreOverride => {
@@ -66,15 +70,61 @@ const rewriteGroupRoleAnnotation = (
   if (['canView', 'canSubmit'].includes(segment)) {
     const action = segment === 'canView' ? 'view' : 'submit';
     const inZone = refs.currentPath.includes('ZoneAssessmentJsonSchema');
-    let annotation = `A list of group role names matching those in groupRoles that can ${action} the question. Only applicable for group assessments.`;
-    if (inZone) {
-      annotation = `A list of group role names that can ${action} questions in this zone. Only applicable for group assessments.`;
+    const inQuestion = refs.currentPath.includes('ZoneQuestionBlockJsonSchema');
+    const inGroups = refs.currentPath.includes('groups');
+
+    // Skip fields inside groups.rolePermissions - let default handle them
+    if (inGroups) {
+      return ignoreOverride;
     }
+
+    // Question level
+    if (inQuestion) {
+      return {
+        description: `A list of group role names that can ${action} the question. Only applicable for group assessments.`,
+        type: 'array',
+        items: {
+          type: 'string',
+        },
+        uniqueItems: true,
+        default: [],
+      };
+    }
+
+    // Zone level
+    if (inZone) {
+      return {
+        description: `A list of group role names that can ${action} questions in this zone. Only applicable for group assessments.`,
+        type: 'array',
+        items: {
+          type: 'string',
+        },
+        uniqueItems: true,
+        default: [],
+      };
+    }
+
+    // Assessment level (deprecated legacy group properties)
+    // Note: `deprecated: true` is added automatically by the traverse function below
+    // because the description contains "DEPRECATED"
     return {
-      description: annotation,
+      description: `A list of group role names that can ${action} questions. Only applicable for group assessments. DEPRECATED -- prefer using the "groups" property instead.`,
       type: 'array',
       items: {
         type: 'string',
+      },
+      uniqueItems: true,
+      default: [],
+    };
+  }
+
+  // Add uniqueItems to the roles array in groups
+  if (segment === 'roles' && refs.currentPath.includes('groups')) {
+    return {
+      description: 'Array of custom user roles in a group.',
+      type: 'array',
+      items: {
+        $ref: '#/definitions/GroupsRoleJsonSchema',
       },
       uniqueItems: true,
       default: [],
@@ -90,7 +140,7 @@ const prairielearnZodToJsonSchema = (
 ) => {
   const jsonSchema = zodToJsonSchema(schema, {
     ...options,
-    override: rewriteGroupRoleAnnotation,
+    override: schemaOverride,
     // Many people have done insane things in their JSON files that don't pass
     // strict validation. For now, we'll be lenient and avoid the use of `.strict()`
     // in our Zod schemas in places where that could cause problems. In the
@@ -118,13 +168,6 @@ const prairielearnZodToJsonSchema = (
   return jsonSchema;
 };
 
-export const infoNewsItem = prairielearnZodToJsonSchema(NewsItemJsonSchema, {
-  name: 'News Item Info',
-  nameStrategy: 'title',
-  target: 'jsonSchema7',
-  definitions: { CommentJsonSchema },
-}) as JSONSchemaType<NewsItemJson>;
-
 export const infoAssessment = prairielearnZodToJsonSchema(AssessmentJsonSchema, {
   name: 'Assessment info',
   nameStrategy: 'title',
@@ -138,10 +181,15 @@ export const infoAssessment = prairielearnZodToJsonSchema(AssessmentJsonSchema, 
     AssessmentAccessRuleJsonSchema,
     QuestionAlternativeJsonSchema,
     ZoneAssessmentJsonSchema,
-    ZoneQuestionJsonSchema,
-    GroupRoleJsonSchema,
+    ZoneQuestionBlockJsonSchema,
+    QuestionPreferencesJsonSchema,
+    LegacyGroupRoleJsonSchema,
+    GroupsRoleJsonSchema,
     AdvanceScorePercJsonSchema,
     CommentJsonSchema,
+    AccessControlJsonSchema,
+    DatetimeLocalStringSchema,
+    DeadlineEntryJsonSchema,
   },
 }) as JSONSchemaType<AssessmentJson>;
 
@@ -156,24 +204,24 @@ export const infoCourseInstance = prairielearnZodToJsonSchema(CourseInstanceJson
   name: 'Course instance information',
   nameStrategy: 'title',
   target: 'jsonSchema7',
-  definitions: { CommentJsonSchema },
+  definitions: { ColorJsonSchema, CommentJsonSchema },
 }) as JSONSchemaType<CourseInstanceJson>;
 
-export const infoElementCore = prairielearnZodToJsonSchema(ElementCoreJsonSchema, {
+const infoElementCore = prairielearnZodToJsonSchema(ElementCoreJsonSchema, {
   name: 'Element Info',
   nameStrategy: 'title',
   target: 'jsonSchema7',
   definitions: { CommentJsonSchema },
 }) as JSONSchemaType<ElementCoreJson>;
 
-export const infoElementCourse = prairielearnZodToJsonSchema(ElementCourseJsonSchema, {
+const infoElementCourse = prairielearnZodToJsonSchema(ElementCourseJsonSchema, {
   name: 'Element Info',
   nameStrategy: 'title',
   target: 'jsonSchema7',
   definitions: { CommentJsonSchema },
 }) as JSONSchemaType<ElementCourseJson>;
 
-export const infoElementExtension = prairielearnZodToJsonSchema(ElementExtensionJsonSchema, {
+const infoElementExtension = prairielearnZodToJsonSchema(ElementExtensionJsonSchema, {
   name: 'Element Extension Info',
   nameStrategy: 'title',
   target: 'jsonSchema7',
@@ -189,7 +237,7 @@ export const infoQuestion = prairielearnZodToJsonSchema(QuestionJsonSchema, {
   },
 }) as JSONSchemaType<QuestionJson>;
 
-export const questionOptionsCalculation = prairielearnZodToJsonSchema(
+const questionOptionsCalculation = prairielearnZodToJsonSchema(
   QuestionOptionsCalculationJsonSchema,
   {
     name: 'Calculation question options',
@@ -199,24 +247,21 @@ export const questionOptionsCalculation = prairielearnZodToJsonSchema(
   },
 ) as JSONSchemaType<QuestionOptionsCalculationJson>;
 
-export const questionOptionsCheckbox = prairielearnZodToJsonSchema(
-  QuestionOptionsCheckboxJsonSchema,
-  {
-    name: 'Checkbox question options',
-    nameStrategy: 'title',
-    target: 'jsonSchema7',
-    definitions: { CommentJsonSchema },
-  },
-) as JSONSchemaType<QuestionOptionsCheckboxJson>;
+const questionOptionsCheckbox = prairielearnZodToJsonSchema(QuestionOptionsCheckboxJsonSchema, {
+  name: 'Checkbox question options',
+  nameStrategy: 'title',
+  target: 'jsonSchema7',
+  definitions: { CommentJsonSchema },
+}) as JSONSchemaType<QuestionOptionsCheckboxJson>;
 
-export const questionOptionsFile = prairielearnZodToJsonSchema(QuestionOptionsFileJsonSchema, {
+const questionOptionsFile = prairielearnZodToJsonSchema(QuestionOptionsFileJsonSchema, {
   name: 'File question options',
   nameStrategy: 'title',
   target: 'jsonSchema7',
   definitions: { CommentJsonSchema },
 }) as JSONSchemaType<QuestionOptionsFileJson>;
 
-export const questionOptionsMultipleChoice = prairielearnZodToJsonSchema(
+const questionOptionsMultipleChoice = prairielearnZodToJsonSchema(
   QuestionOptionsMultipleChoiceJsonSchema,
   {
     name: 'MultipleChoice question options',
@@ -226,7 +271,7 @@ export const questionOptionsMultipleChoice = prairielearnZodToJsonSchema(
   },
 ) as JSONSchemaType<QuestionOptionsMultipleChoiceJson>;
 
-export const questionOptionsMultipleTrueFalse = prairielearnZodToJsonSchema(
+const questionOptionsMultipleTrueFalse = prairielearnZodToJsonSchema(
   QuestionOptionsMultipleTrueFalseJsonSchema,
   {
     name: 'MultipleTrueFalse question options',
@@ -236,7 +281,7 @@ export const questionOptionsMultipleTrueFalse = prairielearnZodToJsonSchema(
   },
 ) as JSONSchemaType<QuestionOptionsMultipleTrueFalseJson>;
 
-export const questionOptionsv3 = prairielearnZodToJsonSchema(QuestionOptionsv3JsonSchema, {
+const questionOptionsv3 = prairielearnZodToJsonSchema(QuestionOptionsv3JsonSchema, {
   name: 'v3 question options',
   nameStrategy: 'title',
   target: 'jsonSchema7',
@@ -244,7 +289,6 @@ export const questionOptionsv3 = prairielearnZodToJsonSchema(QuestionOptionsv3Js
 }) as JSONSchemaType<QuestionOptionsv3Json>;
 
 export const ajvSchemas = {
-  infoNewsItem,
   infoAssessment,
   infoCourse,
   infoCourseInstance,

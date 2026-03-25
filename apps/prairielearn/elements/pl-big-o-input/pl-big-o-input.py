@@ -8,7 +8,6 @@ import lxml.html
 import prairielearn as pl
 import prairielearn.sympy_utils as psu
 import sympy
-from prairielearn.timeout_utils import ThreadingTimeout, TimeoutState
 from typing_extensions import assert_never
 
 
@@ -44,6 +43,7 @@ PLACEHOLDER_DEFAULT = "asymptotic expression"
 SHOW_SCORE_DEFAULT = True
 ALLOW_BLANK_DEFAULT = False
 BLANK_VALUE_DEFAULT = "1"
+INITIAL_VALUE_DEFAULT = None
 BIG_O_INPUT_MUSTACHE_TEMPLATE_NAME = "pl-big-o-input.mustache"
 # This timeout is chosen to allow multiple sympy-based elements to grade on one page,
 # while not exceeding the global timeout enforced for Python execution.
@@ -66,6 +66,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         "show-score",
         "allow-blank",
         "blank-value",
+        "initial-value",
     ]
     pl.check_attribs(element, required_attribs, optional_attribs)
 
@@ -169,6 +170,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
 
     # Next, get some attributes we will use in multiple places
     raw_submitted_answer = data["raw_submitted_answers"].get(name)
+    if raw_submitted_answer is None:
+        raw_submitted_answer = pl.get_string_attrib(
+            element, "initial-value", INITIAL_VALUE_DEFAULT
+        )
     score = data["partial_scores"].get(name, {}).get("score")
 
     # Finally, render each panel
@@ -263,15 +268,15 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
         data["submitted_answers"][name] = None
         return
 
-    s = psu.validate_string_as_sympy(
+    result = psu.try_parse_string_as_sympy(
         a_sub, variables, allow_complex=False, allow_trig_functions=False
     )
 
-    if s is None:
-        data["submitted_answers"][name] = a_sub
-    else:
-        data["format_errors"][name] = s
+    if isinstance(result, psu.SympyParseFailure):
+        data["format_errors"][name] = result.error
         data["submitted_answers"][name] = None
+    else:
+        data["submitted_answers"][name] = a_sub
 
 
 def grade(element_html: str, data: pl.QuestionData) -> None:
@@ -290,18 +295,14 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
     big_o_type = pl.get_enum_attrib(element, "type", BigOType, BIG_O_TYPE_DEFAULT)
 
     try:
-        with ThreadingTimeout(SYMPY_TIMEOUT) as ctx:
-            pl.grade_answer_parameterized(
-                data,
-                name,
-                lambda a_sub: GRADE_FUNCTION_DICT[big_o_type](a_tru, a_sub, variables),
-                weight=weight,
-            )
-        if ctx.state == TimeoutState.TIMED_OUT:
-            # If sympy times out, it's because the comparison couldn't converge, so we return an error.
-            data["format_errors"][name] = (
-                "Your answer did not converge, so your expression may be too loose or tight."
-            )
+        pl.grade_answer_parameterized(
+            data,
+            name,
+            lambda a_sub: GRADE_FUNCTION_DICT[big_o_type](a_tru, a_sub, variables),
+            weight=weight,
+            timeout=SYMPY_TIMEOUT,
+            timeout_format_error="Your answer did not converge, so your expression may be too loose or tight.",
+        )
     except ValueError as e:
         # See https://github.com/PrairieLearn/PrairieLearn/pull/13178 for more context as to why we catch this error.
         if "integer string conversion" in str(e):

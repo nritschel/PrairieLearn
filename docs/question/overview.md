@@ -12,6 +12,23 @@ A question is made up of three main components:
 2. **`question.html`**: The HTML template that defines the question. This is where you write the question text and define the input elements. Reference the [question template documentation](template.md) for more details.
 3. **`server.py`**: This is where you write the logic for generating random values, grading student responses, and any other server-side code. This file is optional, but it is necessary for any question that has non-trivial randomization or custom grading behavior. Reference the [server documentation](server.md) for more details.
 
+## Creating a question
+
+To create a new question through the PrairieLearn web interface:
+
+1. Navigate to the **Questions** tab in your course.
+2. Click the **Add question** button.
+3. Enter a title and Question ID (QID) for your new question.
+4. Choose a starting point:
+   - **Empty question**: Creates a blank question with just the essential files (`question.html` and `server.py`).
+   - **PrairieLearn template**: Start from one of PrairieLearn's pre-built question templates.
+   - **Course template**: Start from a template defined in your course. See [Custom templates](#custom-templates) for details.
+5. Click **Create question**.
+
+!!! tip
+
+    Avoid using term names (e.g. `Spring20/questionName`) or assessment names (e.g. `exam3/question12`) in your question ID, as these can make it harder to find and reuse questions across assessments and terms. One potential folder structure you could consider is `topic/subtopic/question`.
+
 ## Directory structure
 
 Questions are all stored inside the `questions` directory (or any subfolder) for a course. Each question is a single directory that contains all the files for that question. The name of the full question directory relative to `questions` is the QID (the "question ID") for that question. For example, here are three different questions:
@@ -46,10 +63,6 @@ questions
         +-- info.json         # metadata for the "subfolder/nestedQuestion" question
         `-- question.html
 ```
-
-!!! tip
-
-    Avoid using term names (e.g. `Spring20/questionName`) or assessment names (e.g. `exam3/question12`) in your question directory structure, as these can make it harder to find and reuse questions across assessments and terms. One potential folder structure you could consider is `topic/subtopic/question`.
 
 PrairieLearn assumes independent questions; nothing ties them together. However, each question could have multiple parts (inputs that are validated together).
 
@@ -87,6 +100,7 @@ The `info.json` file for each question defines properties of the question. For e
 | `partialCredit`          | boolean | Whether the question will give partial points for fractional scores. (Optional; default: `true`)                                                                                                                                                                                                                   |
 | `externalGradingOptions` | object  | Options for externally graded questions. See the [external grading docs](../externalGrading.md). (Optional; default: none)                                                                                                                                                                                         |
 | `dependencies`           | object  | External JavaScript or CSS dependencies to load. See below. (Optional; default: `{}`)                                                                                                                                                                                                                              |
+| `preferences`            | object  | A schema defining [question preferences](preferences.md) that can be overridden per-assessment. (Optional; default: none)                                                                                                                                                                                          |
 | `sharePublicly`          | boolean | Whether the question should be available for anyone to preview or use in their course                                                                                                                                                                                                                              |
 | `shareSourcePublicly`    | boolean | Whether the source code of the question should be available                                                                                                                                                                                                                                                        |
 | `sharingSets`            | array   | Sharing sets which the question belongs to                                                                                                                                                                                                                                                                         |
@@ -234,3 +248,7 @@ If a question uses more than one method for grading, options 3 and 4 override op
 ## Accessibility
 
 See the [question accessibility documentation](accessibility.md) for more information about how to ensure your questions are accessible to all students, including those using screen readers or other assistive technologies.
+
+## Custom templates
+
+Creating a question with a QID starting with `template/` will create a question that will be presented as a template option when [creating a question](#creating-a-question). This should allow instructors to create course-specific patterns, conventions, or grading processes that can then be adopted by new questions.

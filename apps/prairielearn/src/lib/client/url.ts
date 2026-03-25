@@ -20,15 +20,26 @@ export function getAssessmentInstanceUrl({
   if (publicURL) {
     urlPrefix = `/pl/public/course_instance/${courseInstanceId}`;
   } else if (urlPrefix === undefined) {
-    // Construct the URL prefix with the appropriate course instance
     urlPrefix = `/pl/course_instance/${courseInstanceId}/instructor`;
   }
 
   return `${urlPrefix}/assessment/${assessmentId}`;
 }
 
-export function getStudentEnrollmentUrl(urlPrefix: string, enrollment_id: string): string {
-  return `${urlPrefix}/instance_admin/enrollment/${enrollment_id}`;
+export function getStudentEnrollmentUrl(courseInstanceId: string, enrollmentId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/enrollment/${enrollmentId}`;
+}
+
+export function getCourseInstanceStudentsUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/students`;
+}
+
+export function getCourseInstanceStudentLabelsUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/students/labels`;
+}
+
+export function getCourseInstancePublishingUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/publishing`;
 }
 
 export function getSelfEnrollmentLinkUrl({
@@ -57,6 +68,7 @@ export function getSelfEnrollmentLookupUrl(
   return `/pl/course_instance/lookup?${params.toString()}`;
 }
 
+/** @knipignore */
 export function getCourseInstanceSyncUrl(courseInstanceId: string): string {
   return `/pl/course_instance/${courseInstanceId}/instructor/syncs`;
 }
@@ -75,6 +87,47 @@ export function getCourseInstanceEditErrorUrl(
   return `/pl/course_instance/${courseInstanceId}/instructor/edit_error/${jobSequenceId}`;
 }
 
+export function getCourseEditErrorUrl(courseId: string, jobSequenceId: string): string {
+  return `/pl/course/${courseId}/edit_error/${jobSequenceId}`;
+}
+
 export function getCourseInstanceSettingsUrl(courseInstanceId: string): string {
   return `/pl/course_instance/${courseInstanceId}/instructor/instance_admin/settings`;
+}
+
+export function getAiQuestionGenerationDraftsUrl({ urlPrefix }: { urlPrefix: string }): string {
+  return `${urlPrefix}/ai_generate_question_drafts`;
+}
+
+export function getAdministratorCourseRequestsUrl({ urlPrefix }: { urlPrefix: string }): string {
+  return `${urlPrefix}/administrator/courseRequests`;
+}
+
+type QuestionUrlParts =
+  | { courseInstanceId: string; courseId?: undefined }
+  | { courseInstanceId?: undefined; courseId: string };
+
+export function getAssessmentAccessUrl({
+  courseInstanceId,
+  assessmentId,
+}: {
+  courseInstanceId: string;
+  assessmentId: string;
+}): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/assessment/${assessmentId}/access`;
+}
+
+export function getQuestionUrl({
+  courseInstanceId,
+  courseId,
+  questionId,
+}: { questionId: string } & QuestionUrlParts): string {
+  const urlPrefix = courseInstanceId
+    ? `/pl/course_instance/${courseInstanceId}/instructor`
+    : `/pl/course/${courseId}`;
+  return `${urlPrefix}/question/${questionId}`;
+}
+
+export function getQuestionCreateUrl(courseInstanceId: string): string {
+  return `/pl/course_instance/${courseInstanceId}/instructor/course_admin/questions/create`;
 }

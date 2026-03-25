@@ -179,16 +179,22 @@
       reader.onload = (e) => {
         const dataUrl = e.target.result;
 
+        // Extract base64 data from the data URL. The data URL format is
+        // "data:<mime>;base64,<data>". For empty files, some browsers (e.g.
+        // Chrome) return just "data:" with no comma, while others (e.g.
+        // Firefox) return "data:...;base64," with an empty string after
+        // the comma. We check for both cases.
         const commaSplitIdx = dataUrl.indexOf(',');
-        if (commaSplitIdx === -1) {
+        const base64FileData = commaSplitIdx === -1 ? '' : dataUrl.slice(commaSplitIdx + 1);
+
+        if (!base64FileData) {
           this.addWarningMessage(
             `<strong>${escapeFileName(name)}</strong> is empty, ignoring file.`,
           );
+          this.renderFileList();
           return;
         }
 
-        // Store the file as base-64 encoded data
-        const base64FileData = dataUrl.slice(commaSplitIdx + 1);
         this.saveSubmittedFile(name, size, isFromDownload ? null : new Date(), base64FileData);
         this.refreshRequiredRegex();
         this.renderFileList();
@@ -319,7 +325,7 @@
           );
         } else if (fileData) {
           $fileStatusContainerLeft.append(
-            `<i class="file-status-icon fa fa-check-circle" style="color: ${this.checkIconColor}" aria-hidden="true"></i>`,
+            `<i class="file-status-icon fas fa-check-circle" style="color: ${this.checkIconColor}" aria-hidden="true"></i>`,
           );
         } else {
           $fileStatusContainerLeft.append(
@@ -438,7 +444,7 @@
           $deleteUpload.on('click', () => this.deleteUploadedFile(fileName));
           $fileButtons.append($deleteUpload);
           $fileButtons.append(
-            `<button type="button" class="btn btn-outline-secondary btn-sm file-preview-button ${!isExpanded ? 'collapsed' : ''}" data-bs-toggle="collapse" data-bs-target="#file-preview-${uuid}-${index}" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-controls="file-preview-${uuid}-${index}"><span class="file-preview-icon fa fa-angle-down"></span></button>`,
+            `<button type="button" class="btn btn-outline-secondary btn-sm file-preview-button ${!isExpanded ? 'collapsed' : ''}" data-bs-toggle="collapse" data-bs-target="#file-preview-${uuid}-${index}" aria-expanded="${isExpanded ? 'true' : 'false'}" aria-controls="file-preview-${uuid}-${index}"><span class="file-preview-icon fas fa-angle-down"></span></button>`,
           );
           $fileStatusContainer.append($fileButtons);
         }

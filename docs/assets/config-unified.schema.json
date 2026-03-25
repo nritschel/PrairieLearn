@@ -350,7 +350,7 @@
     },
     "nonVolatileRedisUrl": {
       "type": ["string", "null"],
-      "default": null
+      "default": "redis://localhost:6379"
     },
     "logFilename": {
       "type": "string",
@@ -470,10 +470,6 @@
       "enum": ["S3", "FileSystem"],
       "default": "S3"
     },
-    "initNewsItems": {
-      "type": "boolean",
-      "default": true
-    },
     "cronActive": {
       "type": "boolean",
       "default": true
@@ -581,6 +577,11 @@
     "secretKey": {
       "type": "string",
       "default": "THIS_IS_THE_SECRET_KEY"
+    },
+    "databaseEncryptionKey": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "default": "0000000000000000000000000000000000000000000000000000000000000000"
     },
     "secretSlackOpsBotEndpoint": {
       "type": ["string", "null"],
@@ -896,7 +897,7 @@
     "nonVolatileCacheType": {
       "type": "string",
       "enum": ["none", "redis", "memory"],
-      "default": "none"
+      "default": "redis"
     },
     "questionRenderCacheTtlSec": {
       "type": "number",
@@ -1131,18 +1132,6 @@
       "type": ["string", "null"],
       "default": "prairielearn-dev"
     },
-    "titleOverride": {
-      "type": ["string", "null"],
-      "default": null
-    },
-    "homepageFooterText": {
-      "type": ["string", "null"],
-      "default": null
-    },
-    "homepageFooterTextHref": {
-      "type": ["string", "null"],
-      "default": null
-    },
     "announcementHtml": {
       "type": ["string", "null"],
       "default": null
@@ -1279,9 +1268,35 @@
       "type": ["string", "null"],
       "default": null
     },
+    "aiGradingRateLimitDollars": {
+      "type": "number",
+      "default": 10
+    },
+    "aiGradingInfrastructureFeePercent": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "default": 0.2
+    },
+    "aiGradingCreditPoolMaxAddDollars": {
+      "type": "number",
+      "default": 10000
+    },
+    "aiGradingCreditPoolMaxDeductDollars": {
+      "type": "number",
+      "default": 10000
+    },
     "aiQuestionGenerationRateLimitDollars": {
       "type": "number",
       "default": 1
+    },
+    "administratorOpenAiApiKey": {
+      "type": ["string", "null"],
+      "default": null
+    },
+    "administratorOpenAiOrganization": {
+      "type": ["string", "null"],
+      "default": null
     },
     "requireTermsAcceptance": {
       "type": "boolean",
@@ -1333,13 +1348,6 @@
       "type": ["string", "null"],
       "default": null
     },
-    "pythonVenvSearchPaths": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "default": [".venv"]
-    },
     "costPerMillionTokens": {
       "type": "object",
       "additionalProperties": false,
@@ -1348,8 +1356,10 @@
         "gpt-5-mini-2025-08-07",
         "gpt-5-2025-08-07",
         "gpt-5.1-2025-11-13",
+        "gpt-5.2-2025-12-11",
         "gemini-2.5-flash",
-        "gemini-3-pro-preview",
+        "gemini-3-flash-preview",
+        "gemini-3.1-pro-preview",
         "claude-opus-4-5",
         "claude-haiku-4-5",
         "claude-sonnet-4-5"
@@ -1358,13 +1368,17 @@
         "gpt-4o-2024-11-20": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["input", "cachedInput", "output"],
+          "required": ["input", "cachedInput", "cacheWrite", "output"],
           "properties": {
             "input": {
               "type": "number",
               "minimum": 0
             },
             "cachedInput": {
+              "type": "number",
+              "minimum": 0
+            },
+            "cacheWrite": {
               "type": "number",
               "minimum": 0
             },
@@ -1383,10 +1397,16 @@
         "gpt-5.1-2025-11-13": {
           "$ref": "#/properties/costPerMillionTokens/properties/gpt-4o-2024-11-20"
         },
+        "gpt-5.2-2025-12-11": {
+          "$ref": "#/properties/costPerMillionTokens/properties/gpt-4o-2024-11-20"
+        },
         "gemini-2.5-flash": {
           "$ref": "#/properties/costPerMillionTokens/properties/gpt-4o-2024-11-20"
         },
-        "gemini-3-pro-preview": {
+        "gemini-3-flash-preview": {
+          "$ref": "#/properties/costPerMillionTokens/properties/gpt-4o-2024-11-20"
+        },
+        "gemini-3.1-pro-preview": {
           "$ref": "#/properties/costPerMillionTokens/properties/gpt-4o-2024-11-20"
         },
         "claude-opus-4-5": {
@@ -1403,49 +1423,74 @@
         "gpt-4o-2024-11-20": {
           "input": 2.5,
           "cachedInput": 1.25,
+          "cacheWrite": 0,
           "output": 10
         },
         "gpt-5-mini-2025-08-07": {
           "input": 0.25,
           "cachedInput": 0.025,
+          "cacheWrite": 0,
           "output": 2
         },
         "gpt-5-2025-08-07": {
           "input": 1.25,
           "cachedInput": 0.125,
+          "cacheWrite": 0,
           "output": 10
         },
         "gpt-5.1-2025-11-13": {
           "input": 1.25,
           "cachedInput": 0.125,
+          "cacheWrite": 0,
           "output": 10
+        },
+        "gpt-5.2-2025-12-11": {
+          "input": 1.75,
+          "cachedInput": 0.175,
+          "cacheWrite": 0,
+          "output": 14
         },
         "gemini-2.5-flash": {
           "input": 0.3,
           "cachedInput": 0.03,
+          "cacheWrite": 0,
           "output": 2.5
         },
-        "gemini-3-pro-preview": {
+        "gemini-3-flash-preview": {
+          "input": 0.5,
+          "cachedInput": 0.05,
+          "cacheWrite": 0,
+          "output": 3
+        },
+        "gemini-3.1-pro-preview": {
           "input": 2,
           "cachedInput": 0.2,
+          "cacheWrite": 0,
           "output": 12
         },
         "claude-haiku-4-5": {
           "input": 1,
           "cachedInput": 0.1,
+          "cacheWrite": 1.25,
           "output": 5
         },
         "claude-sonnet-4-5": {
           "input": 3,
           "cachedInput": 0.3,
+          "cacheWrite": 3.75,
           "output": 15
         },
         "claude-opus-4-5": {
           "input": 5,
           "cachedInput": 0.5,
+          "cacheWrite": 6.25,
           "output": 25
         }
       }
+    },
+    "exampleCoursePath": {
+      "type": "string",
+      "default": "./exampleCourse"
     }
   }
 }

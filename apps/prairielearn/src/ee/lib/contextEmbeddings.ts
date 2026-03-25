@@ -25,7 +25,7 @@ const sql = loadSqlEquiv(import.meta.url);
  * @param vec The embedding vector to convert.
  * @returns A pgvector-compatible representation of the embedding vector.
  */
-export function vectorToString(vec: number[]) {
+function vectorToString(vec: number[]) {
   return `[${vec.join(', ')}]`;
 }
 
@@ -35,7 +35,7 @@ export function vectorToString(vec: number[]) {
  * @param authnUserId The PrairieLearn authenticated user ID.
  * @returns An OpenAI user ID (for internal tracking).
  */
-export function openAiUserFromAuthn(authnUserId: string): string {
+function openAiUserFromAuthn(authnUserId: string): string {
   return `user_${authnUserId}`;
 }
 
@@ -47,7 +47,7 @@ export function openAiUserFromAuthn(authnUserId: string): string {
  * @param openAiUser The OpenAI userstring requesting the embedding.
  * @returns The resultant document embedding.
  */
-export async function createEmbedding(
+async function createEmbedding(
   embeddingModel: EmbeddingModel,
   text: string,
   openAiUser: string,
@@ -87,7 +87,7 @@ async function insertDocumentChunk(
     QuestionGenerationContextEmbeddingSchema,
   );
 
-  if (chunk && chunk.doc_text === doc.text) {
+  if (chunk?.doc_text === doc.text) {
     job.info(
       `Chunk for ${filepath} (${doc.chunkId || 'no chunk ID'}) already exists in the database. Skipping.`,
     );
@@ -115,6 +115,8 @@ export async function syncContextDocuments(embeddingModel: EmbeddingModel, authn
   const serverJob = await createServerJob({
     type: 'sync_question_generation_context',
     description: 'Generate embeddings for context documents',
+    userId: authnUserId,
+    authnUserId,
   });
 
   serverJob.executeInBackground(async (job) => {
@@ -129,12 +131,12 @@ export async function syncContextDocuments(embeddingModel: EmbeddingModel, authn
       const filename = path.basename(file.path);
       if (filename !== 'question.html') continue;
 
-      const fileText = await buildContextForQuestion(path.dirname(file.path));
-      if (fileText) {
+      const questionContext = await buildContextForQuestion(path.dirname(file.path));
+      if (questionContext) {
         await insertDocumentChunk(
           embeddingModel,
           path.relative(REPOSITORY_ROOT_PATH, file.path),
-          { text: fileText, chunkId: '' },
+          { text: questionContext.context, chunkId: '' },
           job,
           openAiUserFromAuthn(authnUserId),
         );

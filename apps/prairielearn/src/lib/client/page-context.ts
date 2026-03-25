@@ -5,6 +5,7 @@ import { run } from '@prairielearn/run';
 import { NavPageSchema, NavbarTypeSchema } from '../../components/Navbar.types.js';
 import { SelectUserSchema } from '../authn.types.js';
 import { PageAuthzDataSchema } from '../authz-data-lib.js';
+import type { UntypedResLocals } from '../res-locals.types.js';
 
 import {
   RawStaffAssessmentSchema,
@@ -30,7 +31,6 @@ const BasePageContextSchema = z.object({
   access_as_administrator: z.boolean(),
   is_administrator: z.boolean(),
   is_institution_administrator: z.boolean(),
-  news_item_notification_count: SelectUserSchema.shape.news_item_notification_count,
   navPage: NavPageSchema,
   /** You should prefer to set the navbarType instead of using this value. */
   navbarType: NavbarTypeSchema,
@@ -71,7 +71,6 @@ const StudentCourseContextSchema = z
         short_name: z.string(),
       })
       .brand('StudentCourse'),
-    has_enhanced_navigation: z.boolean(),
   })
   .brand<'StudentCourseContext'>();
 type StudentCourseContext = z.infer<typeof StudentCourseContextSchema>;
@@ -86,7 +85,6 @@ const StaffCourseContextSchema = z
       })
       .brand('StaffCourse'),
     institution: StaffInstitutionSchema,
-    has_enhanced_navigation: z.boolean(),
   })
   .brand<'StaffCourseContext'>();
 type StaffCourseContext = z.infer<typeof StaffCourseContextSchema>;
@@ -184,7 +182,6 @@ export type PageContext<
   ? PageTypeReturnMap[AccessType][PageType] & AuthzDataPageContext
   : PageTypeReturnMap[AccessType][PageType];
 
-export type PlainPageContext = PageContext<'plain', 'student' | 'instructor', false>;
 export type PageContextWithAuthzData = PageContext<'plain', 'student' | 'instructor', true>;
 
 /**
@@ -200,7 +197,7 @@ export function extractPageContext<
   AccessType extends 'student' | 'instructor',
   WithAuthz extends boolean = true,
 >(
-  resLocals: Record<string, any>,
+  resLocals: UntypedResLocals,
   options: {
     pageType: PageType;
     accessType: AccessType;

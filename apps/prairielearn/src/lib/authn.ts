@@ -48,7 +48,7 @@ async function handlePendingLti13User({
 
   // Store the `sub` claim.
   await updateLti13UserSub({
-    user_id: user.user_id,
+    user_id: user.id,
     lti13_instance_id: lti13Instance.id,
     sub,
   });
@@ -168,16 +168,14 @@ export async function loadUser(
 
     res.locals.is_institution_administrator =
       res.locals.is_administrator ||
-      (await sqldb.queryRow(
+      (await sqldb.queryScalar(
         sql.select_is_institution_admin,
         {
           institution_id: res.locals.authn_institution.id,
-          user_id: res.locals.authn_user.user_id,
+          user_id: res.locals.authn_user.id,
         },
         z.boolean(),
       ));
-
-    res.locals.news_item_notification_count = selectedUser.news_item_notification_count;
   }
 
   return { user: selectedUser.user };

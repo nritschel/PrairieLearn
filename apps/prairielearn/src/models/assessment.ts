@@ -2,19 +2,23 @@ import { z } from 'zod';
 
 import {
   type CursorIterator,
+  execute,
   loadSqlEquiv,
   queryCursor,
   queryOptionalRow,
+  queryOptionalScalar,
   queryRow,
   queryRows,
 } from '@prairielearn/postgres';
+import { IdSchema } from '@prairielearn/zod';
 
 import {
   type Assessment,
   AssessmentModuleSchema,
   AssessmentSchema,
   AssessmentSetSchema,
-  IdSchema,
+  type AssessmentTool,
+  AssessmentToolSchema,
 } from '../lib/db-types.js';
 
 const sql = loadSqlEquiv(import.meta.url);
@@ -41,11 +45,6 @@ export async function selectAssessmentByTid({
     { course_instance_id, tid },
     AssessmentSchema,
   );
-}
-
-export async function selectAssessmentIsPublic(assessment_id: string): Promise<boolean> {
-  const isPublic = await queryRow(sql.check_assessment_is_public, { assessment_id }, z.boolean());
-  return isPublic;
 }
 
 export async function selectAssessmentInfoForJob(assessment_id: string) {
@@ -75,6 +74,53 @@ export const AssessmentRowSchema = AssessmentStatsRowSchema.extend({
 });
 export type AssessmentRow = z.infer<typeof AssessmentRowSchema>;
 
+/**
+ * Returns the effective enabled tools for a question in a given zone and
+ * assessment. Zone-level tool configuration overrides assessment-level
+ * configuration on a per-tool basis: if a zone defines a tool (even as
+ * disabled), the assessment-level row for that tool is ignored.
+ */
+export async function selectEnabledAssessmentTools({
+  assessment_id,
+  zone_id,
+}: {
+  assessment_id: string;
+  zone_id: string;
+}): Promise<AssessmentTool[]> {
+  const allTools = await queryRows(
+    sql.select_assessment_tools,
+    { assessment_id, zone_id },
+    AssessmentToolSchema,
+  );
+
+  const zoneTools = new Set(allTools.filter((t) => t.zone_id != null).map((t) => t.tool));
+
+  return allTools.filter((t) => {
+    if (t.zone_id != null) {
+      // Zone-level tool: include only if enabled.
+      return t.enabled;
+    }
+    // Assessment-level tool: include only if enabled AND not overridden at zone level.
+    return t.enabled && !zoneTools.has(t.tool);
+  });
+}
+
+export async function selectEnabledToolsForInstanceQuestion({
+  instance_question_id,
+  assessment_id,
+}: {
+  instance_question_id: string;
+  assessment_id: string;
+}) {
+  const zone_id = await queryOptionalScalar(
+    sql.select_zone_id_for_instance_question,
+    { instance_question_id },
+    IdSchema.nullable(),
+  );
+  if (zone_id == null) return [];
+  return selectEnabledAssessmentTools({ assessment_id, zone_id });
+}
+
 export async function selectAssessments({
   course_instance_id,
 }: {
@@ -85,6 +131,13 @@ export async function selectAssessments({
     { course_instance_id },
     AssessmentRowSchema,
   );
+}
+
+/**
+ * Acquires a row-level lock on the assessment. Must be called within a transaction.
+ */
+export async function lockAssessment(assessment: Assessment): Promise<void> {
+  await execute(sql.lock_assessment_row, { assessment_id: assessment.id });
 }
 
 export function selectAssessmentsCursor({

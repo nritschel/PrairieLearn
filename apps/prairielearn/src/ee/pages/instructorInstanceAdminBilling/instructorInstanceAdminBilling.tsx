@@ -3,8 +3,8 @@ import asyncHandler from 'express-async-handler';
 import { z } from 'zod';
 
 import * as error from '@prairielearn/error';
-import { loadSqlEquiv, queryRow } from '@prairielearn/postgres';
-import { Hydrate } from '@prairielearn/preact/server';
+import { loadSqlEquiv, queryRow, queryScalar } from '@prairielearn/postgres';
+import { Hydrate } from '@prairielearn/react/server';
 
 import { PageLayout } from '../../../components/PageLayout.js';
 import { type PlanName } from '../../lib/billing/plans-types.js';
@@ -32,7 +32,7 @@ async function loadPageData(res: Response) {
     course_instance_id: res.locals.course_instance.id,
   });
 
-  const enrollmentCount = await queryRow(
+  const enrollmentCount = await queryScalar(
     sql.course_instance_enrollment_count,
     { course_instance_id: res.locals.course_instance.id },
     z.number(),
@@ -95,11 +95,13 @@ router.get(
         content: (
           <>
             {!editable && (
-              <div class="alert alert-warning">Only course owners can change billing settings.</div>
+              <div className="alert alert-warning">
+                Only course owners can change billing settings.
+              </div>
             )}
-            <div class="card mb-4">
-              <div class="card-header bg-primary text-white d-flex">Billing</div>
-              <div class="card-body">
+            <div className="card mb-4">
+              <div className="card-header bg-primary text-white d-flex">Billing</div>
+              <div className="card-body">
                 <Hydrate>
                   <InstructorInstanceAdminBillingForm
                     initialRequiredPlans={requiredPlans}
@@ -164,7 +166,7 @@ router.post(
     await updateRequiredPlansForCourseInstance(
       res.locals.course_instance.id,
       desiredRequiredPlans,
-      res.locals.authn_user.user_id,
+      res.locals.authn_user.id,
     );
     res.redirect(req.originalUrl);
   }),

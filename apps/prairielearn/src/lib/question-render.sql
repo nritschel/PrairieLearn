@@ -35,8 +35,8 @@ SELECT
 FROM
   issues AS i
   LEFT JOIN course_instances AS ci ON (ci.id = i.course_instance_id)
-  JOIN pl_courses AS c ON (c.id = i.course_id)
-  LEFT JOIN users AS u ON (u.user_id = i.user_id)
+  JOIN courses AS c ON (c.id = i.course_id)
+  LEFT JOIN users AS u ON (u.id = i.user_id)
 WHERE
   i.variant_id = $variant_id
   AND i.course_caused
@@ -81,7 +81,7 @@ FROM
   LEFT JOIN assessments AS a ON (a.id = ai.assessment_id)
   LEFT JOIN course_instances AS ci ON (ci.id = a.course_instance_id)
   JOIN questions AS q ON (q.id = v.question_id)
-  JOIN pl_courses AS c ON (c.id = v.course_id)
+  JOIN courses AS c ON (c.id = v.course_id)
   LEFT JOIN LATERAL (
     SELECT
       *
@@ -96,7 +96,7 @@ FROM
     LIMIT
       1
   ) AS gj ON TRUE
-  LEFT JOIN users u ON (s.auth_user_id = u.user_id)
+  LEFT JOIN users u ON (s.auth_user_id = u.id)
 WHERE
   v.id = $variant_id
 ORDER BY
@@ -125,7 +125,7 @@ WITH
     SELECT
       iq.id AS current_id,
       (lead(iq.id) OVER w) AS id,
-      (lead(qo.sequence_locked) OVER w) AS sequence_locked
+      (lead(qo.question_access_mode) OVER w) AS question_access_mode
     FROM
       instance_questions AS iq
       JOIN assessment_instances AS ai ON (ai.id = iq.assessment_instance_id)
@@ -168,11 +168,12 @@ SELECT
   to_jsonb(lgj) AS grading_job,
   to_jsonb(s) AS submission,
   qo.question_number,
+  qo.question_access_mode,
   jsonb_build_object(
     'id',
     next_iq.id,
-    'sequence_locked',
-    next_iq.sequence_locked
+    'question_access_mode',
+    next_iq.question_access_mode
   ) AS next_instance_question,
   to_jsonb(aq) AS assessment_question,
   to_jsonb(ai) AS assessment_instance,
@@ -215,12 +216,12 @@ FROM
   LEFT JOIN assessments AS a ON (a.id = ai.assessment_id)
   LEFT JOIN assessment_sets AS aset ON (aset.id = a.assessment_set_id)
   LEFT JOIN course_instances AS ci ON (ci.id = v.course_instance_id)
-  JOIN pl_courses AS c ON (c.id = v.course_id)
-  JOIN pl_courses AS qc ON (qc.id = q.course_id)
+  JOIN courses AS c ON (c.id = v.course_id)
+  JOIN courses AS qc ON (qc.id = q.course_id)
   LEFT JOIN next_iq ON (next_iq.current_id = iq.id)
-  LEFT JOIN users AS u ON (s.auth_user_id = u.user_id)
+  LEFT JOIN users AS u ON (s.auth_user_id = u.id)
   LEFT JOIN question_order (ai.id) AS qo ON (qo.instance_question_id = iq.id)
-  LEFT JOIN group_configs AS gc ON (
+  LEFT JOIN team_configs AS gc ON (
     gc.assessment_id = a.id
     AND gc.deleted_at IS NULL
   )

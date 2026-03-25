@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 
 import { TRPCError, initTRPC } from '@trpc/server';
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
+import stableStringify from 'fast-json-stable-stringify';
 import superjson from 'superjson';
 import { z } from 'zod';
 
@@ -269,7 +270,7 @@ const saveAllRules = t.procedure
   });
 
 export function computeHash(rules: object[]): string {
-  return crypto.createHash('sha256').update(JSON.stringify(rules)).digest('hex');
+  return crypto.createHash('sha256').update(stableStringify(rules)).digest('hex');
 }
 
 export const accessControlRouter = t.router({

@@ -5,6 +5,8 @@ import z from 'zod';
 import * as error from '@prairielearn/error';
 import * as sqldb from '@prairielearn/postgres';
 
+import { resolveModernAssessmentInstanceAccess } from '../lib/access-control-modern.js';
+import { assessmentInstanceLabel, assessmentLabel } from '../lib/assessment.shared.js';
 import {
   AssessmentInstanceSchema,
   AssessmentSchema,
@@ -29,8 +31,6 @@ const SelectAndAuthzAssessmentInstanceBaseSchema = z.object({
   assessment: AssessmentSchema,
   assessment_set: AssessmentSetSchema,
   authz_result: SprocAuthzAssessmentInstanceSchema,
-  assessment_instance_label: z.string(),
-  assessment_label: z.string(),
   file_list: z.array(FileSchema),
   instance_group_uid_list: z.array(z.string()),
 });
@@ -47,9 +47,12 @@ const SelectAndAuthzAssessmentInstanceSchema = z.union([
   }),
 ]);
 
-export type ResLocalsAssessmentInstance = z.infer<typeof SelectAndAuthzAssessmentInstanceSchema>;
+export type ResLocalsAssessmentInstance = z.infer<typeof SelectAndAuthzAssessmentInstanceSchema> & {
+  assessment_instance_label: string;
+  assessment_label: string;
+};
 
-export async function selectAndAuthzAssessmentInstance(req: Request, res: Response) {
+async function selectAndAuthzAssessmentInstance(req: Request, res: Response) {
   const row = await sqldb.queryOptionalRow(
     sql.select_and_auth,
     {
@@ -62,12 +65,29 @@ export async function selectAndAuthzAssessmentInstance(req: Request, res: Respon
   );
   if (row === null) throw new error.HttpStatusError(403, 'Access denied');
 
-  // TODO: consider row.assessment.modern_access_control
+  if (row.assessment.modern_access_control) {
+    const modernResult = await resolveModernAssessmentInstanceAccess({
+      assessment: row.assessment,
+      userId: res.locals.authz_data.user.id,
+      courseInstance: res.locals.course_instance,
+      authzData: res.locals.authz_data,
+      reqDate: res.locals.req_date,
+      assessmentInstance: row.assessment_instance,
+    });
+    row.authz_result = modernResult;
+  }
 
   if (!row.authz_result.authorized) {
     throw new error.HttpStatusError(403, 'Access denied');
   }
-  Object.assign(res.locals, row);
+  Object.assign(res.locals, row, {
+    assessment_instance_label: assessmentInstanceLabel(
+      row.assessment_instance,
+      row.assessment,
+      row.assessment_set,
+    ),
+    assessment_label: assessmentLabel(row.assessment, row.assessment_set),
+  });
 }
 
 export default asyncHandler(async (req, res, next) => {

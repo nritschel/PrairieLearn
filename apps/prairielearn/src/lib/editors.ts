@@ -26,6 +26,7 @@ import { selectQuestionsForCourseInstanceCopy } from '../models/question.js';
 import * as courseDB from '../sync/course-db.js';
 import * as syncFromDisk from '../sync/syncFromDisk.js';
 
+import { applyMigrationToAssessmentFile } from './access-control-migration.js';
 import { b64DecodeUnicode, b64EncodeUnicode } from './base64-util.js';
 import { logChunkChangesToJob, updateChunksForCourse } from './chunks.js';
 import type { StaffCourse } from './client/safe-db-types.js';
@@ -56,12 +57,7 @@ async function syncCourseFromDisk(
 ) {
   const endGitHash = await getCourseCommitHash(course.path);
 
-  const syncResult = await syncFromDisk.syncDiskToSqlWithLock(
-    course.id,
-    course.path,
-    job,
-    courseData,
-  );
+  const syncResult = await syncFromDisk.syncDiskToSqlWithLock(course, job, courseData);
 
   if (syncResult.status === 'sharing_error') {
     throw new Error('Sync completely failed due to invalid question sharing edit.');
@@ -298,7 +294,7 @@ export abstract class Editor {
             this.course.path,
           );
           const sharingConfigurationValid = await syncFromDisk.checkSharingConfigurationValid(
-            this.course.id,
+            this.course,
             possibleCourseData,
             job,
           );
@@ -467,6 +463,52 @@ async function getExistingShortNames(rootDirectory: string, infoFile: string) {
   await walk('');
   debug('getExistingShortNames() returning', files);
   return files;
+}
+
+/**
+ * Validates that a new QID does not conflict with any existing question QIDs
+ * by being a subdirectory or parent directory of an existing question. The sync
+ * process stops recursing into subdirectories once it finds an info.json, so
+ * nesting one question inside another would make the nested question invisible.
+ *
+ * @param newQid - The QID to validate.
+ * @param existingQids - List of existing question QIDs.
+ * @param skipQid - Optional QID to skip (e.g., the question being renamed).
+ */
+function validateQidNesting(newQid: string, existingQids: string[], skipQid?: string): void {
+  const normalizedNewQid = path.normalize(newQid);
+  for (const existingQid of existingQids) {
+    if (skipQid != null && existingQid === skipQid) continue;
+
+    const normalizedExistingQid = path.normalize(existingQid);
+    if (normalizedNewQid.startsWith(normalizedExistingQid + '/')) {
+      throw new AugmentedError(
+        `The QID "${newQid}" is a subdirectory of the existing question "${existingQid}". A question cannot be nested inside another question's directory.`,
+        {
+          info: html`
+            <p>
+              The QID <code>${newQid}</code> is a subdirectory of the existing question
+              <code>${existingQid}</code>. A question cannot be nested inside another question's
+              directory.
+            </p>
+          `,
+        },
+      );
+    }
+    if (normalizedExistingQid.startsWith(normalizedNewQid + '/')) {
+      throw new AugmentedError(
+        `The QID "${newQid}" would be a parent directory of the existing question "${existingQid}". A question cannot contain another question's directory.`,
+        {
+          info: html`
+            <p>
+              The QID <code>${newQid}</code> would be a parent directory of the existing question
+              <code>${existingQid}</code>. A question cannot contain another question's directory.
+            </p>
+          `,
+        },
+      );
+    }
+  }
 }
 
 export class AssessmentCopyEditor extends Editor {
@@ -774,6 +816,10 @@ export class CourseInstanceCopyEditor extends Editor {
   private from_path: string;
   private is_transfer: boolean;
   private metadataOverrides?: Record<string, any>;
+  private accessControlMigration?: {
+    strategy: 'migrate' | 'keep' | 'wipe';
+    preserveIncompatible: boolean;
+  };
 
   public readonly uuid: string;
 
@@ -783,6 +829,10 @@ export class CourseInstanceCopyEditor extends Editor {
       from_path: string;
       course_instance: CourseInstance;
       metadataOverrides?: Record<string, any>;
+      accessControlMigration?: {
+        strategy: 'migrate' | 'keep' | 'wipe';
+        preserveIncompatible: boolean;
+      };
     },
   ) {
     const is_transfer = !idsEqual(params.locals.course.id, params.from_course.id);
@@ -795,6 +845,7 @@ export class CourseInstanceCopyEditor extends Editor {
     this.from_path = params.from_path;
     this.is_transfer = is_transfer;
     this.metadataOverrides = params.metadataOverrides;
+    this.accessControlMigration = params.accessControlMigration;
 
     this.uuid = crypto.randomUUID();
   }
@@ -806,7 +857,7 @@ export class CourseInstanceCopyEditor extends Editor {
     const courseInstancesPath = path.join(this.course.path, 'courseInstances');
 
     debug('Get all existing long names');
-    const oldNamesLong = await sqldb.queryRows(
+    const oldNamesLong = await sqldb.queryScalars(
       sql.select_course_instances_with_course,
       { course_id: this.course.id },
       z.string(),
@@ -952,6 +1003,23 @@ export class CourseInstanceCopyEditor extends Editor {
 
     const formattedJson = await formatJsonWithPrettier(JSON.stringify(infoJson));
     await fs.writeFile(path.join(courseInstancePath, 'infoCourseInstance.json'), formattedJson);
+
+    if (this.accessControlMigration && this.accessControlMigration.strategy !== 'keep') {
+      const assessmentsPath = path.join(courseInstancePath, 'assessments');
+      if (await fs.pathExists(assessmentsPath)) {
+        const assessmentDirs = await fs.readdir(assessmentsPath);
+        for (const dir of assessmentDirs) {
+          const infoPath = path.join(assessmentsPath, dir, 'infoAssessment.json');
+          if (await fs.pathExists(infoPath)) {
+            await applyMigrationToAssessmentFile(
+              infoPath,
+              this.accessControlMigration.strategy,
+              this.accessControlMigration.preserveIncompatible,
+            );
+          }
+        }
+      }
+    }
 
     pathsToAdd.push(courseInstancePath);
     return {
@@ -1219,7 +1287,7 @@ export class QuestionAddEditor extends Editor {
 
     const { qid, title } = await run(async () => {
       if (!(this.qid && this.title) && this.isDraft) {
-        let draftNumber = await sqldb.queryRow(
+        let draftNumber = await sqldb.queryScalar(
           sql.update_draft_number,
           { course_id: this.course.id },
           z.number(),
@@ -1229,7 +1297,7 @@ export class QuestionAddEditor extends Editor {
           await fs.pathExists(path.join(questionsPath, '__drafts__', `draft_${draftNumber}`))
         ) {
           // increment and sync to postgres
-          draftNumber = await sqldb.queryRow(
+          draftNumber = await sqldb.queryScalar(
             sql.update_draft_number,
             { course_id: this.course.id },
             z.number(),
@@ -1273,6 +1341,9 @@ export class QuestionAddEditor extends Editor {
         `,
       });
     }
+
+    const existingQids = await getExistingShortNames(questionsPath, 'info.json');
+    validateQidNesting(qid, existingQids);
 
     if (this.template_source !== 'empty' && this.template_qid) {
       const sourceQuestionsPath =
@@ -1642,6 +1713,11 @@ export class QuestionRenameEditor extends Editor {
       });
     }
 
+    if (qidChanging) {
+      const existingQids = await getExistingShortNames(questionsPath, 'info.json');
+      validateQidNesting(this.qid_new, existingQids, this.question.qid);
+    }
+
     const pathsToAdd: string[] = [];
 
     if (qidChanging) {
@@ -1829,7 +1905,7 @@ export class QuestionCopyEditor extends Editor {
 }
 
 async function selectQuestionTitlesForCourse(course: Course): Promise<string[]> {
-  return await sqldb.queryRows(
+  return await sqldb.queryScalars(
     sql.select_question_titles_for_course,
     { course_id: course.id },
     z.string(),
@@ -1837,7 +1913,7 @@ async function selectQuestionTitlesForCourse(course: Course): Promise<string[]> 
 }
 
 async function selectQuestionUuidsForCourse(course: Course): Promise<string[]> {
-  return await sqldb.queryRows(
+  return await sqldb.queryScalars(
     sql.select_question_uuids_for_course,
     { course_id: course.id },
     z.string(),
@@ -1908,6 +1984,8 @@ async function copyQuestion({
     questionTitle = names.longName;
   }
   const questionPath = path.join(questionsPath, qid);
+
+  validateQidNesting(qid, oldShortNames);
 
   const fromPath = from_path;
   const toPath = questionPath;

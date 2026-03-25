@@ -18,6 +18,7 @@ import { features } from '../lib/features/index.js';
 import { findCoursesBySharingNames } from '../models/course.js';
 import { selectInstitutionForCourse } from '../models/institution.js';
 import {
+  type AccessControlJson,
   type AssessmentJson,
   type AssessmentJsonInput,
   type AssessmentSetJson,
@@ -30,11 +31,12 @@ import {
 } from '../schemas/index.js';
 import * as schemas from '../schemas/index.js';
 
+import { deduplicateByName } from './deduplicate.js';
 import * as infofile from './infofile.js';
 import { isDraftQid } from './question.js';
 
 // We use a single global instance so that schemas aren't recompiled every time they're used
-const ajv = new Ajv({ allErrors: true });
+const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
 
 const DEFAULT_ASSESSMENT_SETS: AssessmentSetJson[] = [
   {
@@ -261,12 +263,18 @@ export async function loadFullCourse(
       );
     });
 
+    const validStudentLabelNames =
+      courseInstance.data == null
+        ? undefined
+        : new Set(courseInstance.data.studentLabels?.map((label) => label.name));
+
     const assessments = await loadAssessments({
       coursePath,
       courseInstanceDirectory,
       courseInstanceExpired,
       questions,
       sharingEnabled,
+      validStudentLabelNames,
     });
 
     for (const assessment of Object.values(assessments)) {
@@ -514,7 +522,7 @@ export async function loadInfoFile<T extends { uuid: string }>({
   }
 }
 
-export async function loadCourseInfo({
+async function loadCourseInfo({
   courseId,
   coursePath,
   assessmentSetsInUse,
@@ -555,50 +563,24 @@ export async function loadCourseInfo({
     );
   }
 
-  /**
-   * Used to retrieve fields such as "assessmentSets" and "topics".
-   * Adds a warning when syncing if duplicates are found.
-   * If defaults are provided, the entries from defaults not present in the resulting list are merged.
-   *
-   * Each entry must have a `name` property.
-   *
-   * @param fieldName The member of `info` to inspect
-   */
   function getFieldWithoutDuplicates<
     K extends 'tags' | 'topics' | 'assessmentSets' | 'assessmentModules' | 'sharingSets',
   >(fieldName: K, defaults?: CourseJson[K]): CourseJson[K] {
     type Entry = NonNullable<CourseJson[K]>[number];
-    const known = new Map<string, Entry>();
-    const duplicateEntryIds = new Set<string>();
+    const result = deduplicateByName<Entry>(
+      (info![fieldName] ?? []) as Entry[],
+      defaults as Entry[] | undefined,
+    );
 
-    (info![fieldName] ?? []).forEach((entry) => {
-      const entryId = entry.name;
-      if (known.has(entryId)) {
-        duplicateEntryIds.add(entryId);
-      }
-      known.set(entryId, entry);
-    });
-
-    if (duplicateEntryIds.size > 0) {
-      const duplicateIdsString = [...duplicateEntryIds.values()]
-        .map((name) => `"${name}"`)
-        .join(', ');
-      const warning = `Found duplicates in '${fieldName}': ${duplicateIdsString}. Only the last of each duplicate will be synced.`;
-      infofile.addWarning(loadedData, warning);
+    if (result.duplicates.size > 0) {
+      const duplicateIdsString = [...result.duplicates].map((name) => `"${name}"`).join(', ');
+      infofile.addWarning(
+        loadedData,
+        `Found duplicates in '${fieldName}': ${duplicateIdsString}. Only the last of each duplicate will be synced.`,
+      );
     }
 
-    if (defaults) {
-      defaults.forEach((defaultEntry) => {
-        const defaultEntryId = defaultEntry.name;
-        if (!known.has(defaultEntryId)) {
-          known.set(defaultEntryId, defaultEntry);
-        }
-      });
-    }
-
-    // Turn the map back into a list; the JS spec ensures that Maps remember
-    // insertion order, so the order is preserved.
-    return [...known.values()] as CourseJson[K];
+    return result.entries as CourseJson[K];
   }
 
   // Assessment sets in DEFAULT_ASSESSMENT_SETS may be in use but not present in the
@@ -1070,12 +1052,42 @@ function validateQuestion({
     }
   }
 
+  if (question.gradingMethod === 'External' && !question.externalGradingOptions) {
+    errors.push('"externalGradingOptions" is required when "gradingMethod" is "External"');
+  }
+
   if (question.externalGradingOptions?.timeout) {
     if (question.externalGradingOptions.timeout > config.externalGradingMaximumTimeout) {
       warnings.push(
         `External grading timeout value of ${question.externalGradingOptions.timeout} seconds exceeds the maximum value and has been limited to ${config.externalGradingMaximumTimeout} seconds.`,
       );
       question.externalGradingOptions.timeout = config.externalGradingMaximumTimeout;
+    }
+  }
+
+  if (question.preferences) {
+    for (const [key, field] of Object.entries(question.preferences)) {
+      if (typeof field.default !== field.type) {
+        errors.push(
+          `preferences.${key}: default value must be of type "${field.type}", got ${typeof field.default}`,
+        );
+      }
+      if (field.enum) {
+        if (field.type === 'boolean') {
+          errors.push(`preferences.${key}: boolean preferences cannot have enum values`);
+        } else {
+          for (const [i, val] of field.enum.entries()) {
+            if (typeof val !== field.type) {
+              errors.push(
+                `preferences.${key}.enum[${i}]: enum values must be of type "${field.type}", got ${typeof val}`,
+              );
+            }
+          }
+          if (!field.enum.includes(field.default as string | number)) {
+            errors.push(`preferences.${key}: default value must be present in the enum options`);
+          }
+        }
+      }
     }
   }
 
@@ -1120,6 +1132,88 @@ function formatValues(qids: Set<string> | string[]) {
 }
 
 /**
+ * Validates an array of access control rules.
+ * Returns a single object with all accumulated errors and warnings.
+ */
+export function validateAccessControlArray({
+  accessControlJsonArray,
+  validStudentLabelNames,
+}: {
+  accessControlJsonArray: AccessControlJson[];
+  validStudentLabelNames?: Set<string>;
+}): { warnings: string[]; errors: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (accessControlJsonArray.length === 0) {
+    return { errors, warnings };
+  }
+
+  // A main rule has no `labels` property (applies to everyone)
+  const mainRules = accessControlJsonArray.filter(
+    (rule) => rule.labels == null || rule.labels.length === 0,
+  );
+
+  if (mainRules.length === 0) {
+    errors.push('No main rule found. The first rule must apply to everyone.');
+  } else if (mainRules.length > 1) {
+    errors.push(`Found ${mainRules.length} main rules. Only one rule should apply to everyone.`);
+  } else {
+    // The DB constraint `check_first_rule_is_none` requires the main rule at index 0
+    const firstRule = accessControlJsonArray[0];
+    const isFirstRuleMain = firstRule.labels == null || firstRule.labels.length === 0;
+    if (!isFirstRuleMain) {
+      errors.push('The main rule (without labels) must be the first rule in the array.');
+    }
+  }
+
+  for (const rule of accessControlJsonArray) {
+    const labels = rule.labels ?? [];
+    const seenLabels = new Set<string>();
+    const duplicateLabels = new Set<string>();
+
+    for (const label of labels) {
+      if (seenLabels.has(label)) {
+        duplicateLabels.add(label);
+      } else {
+        seenLabels.add(label);
+      }
+    }
+
+    if (duplicateLabels.size > 0) {
+      errors.push(
+        `Found duplicate student labels in this access control rule: ${formatValues(duplicateLabels)}.`,
+      );
+    }
+
+    if (validStudentLabelNames !== undefined) {
+      const invalidLabels = [...seenLabels].filter((label) => !validStudentLabelNames.has(label));
+      if (invalidLabels.length > 0) {
+        errors.push(
+          `The access control rule targets non-existent student labels: ${formatValues(invalidLabels)}.`,
+        );
+      }
+    }
+
+    if (rule.dateControl?.password === '') {
+      errors.push('Password cannot be empty.');
+    }
+
+    const isMainRule = rule.labels == null || rule.labels.length === 0;
+    if (!isMainRule && rule.integrations != null) {
+      errors.push('integrations can only be specified on the main rule (the rule without labels).');
+    }
+    if (!isMainRule && rule.listBeforeRelease !== undefined) {
+      errors.push(
+        'listBeforeRelease can only be specified on the main rule (the rule without labels).',
+      );
+    }
+  }
+
+  return { errors, warnings };
+}
+
+/**
  * Converts legacy group properties to the new groups format for unified handling.
  */
 export function convertLegacyGroupsToGroupsConfig(assessment: AssessmentJson): GroupsJson {
@@ -1156,12 +1250,14 @@ function validateAssessment({
   questions,
   sharingEnabled,
   courseInstanceExpired,
+  validStudentLabelNames,
 }: {
   assessment: AssessmentJson;
   rawAssessment: AssessmentJsonInput;
   questions: Record<string, InfoFile<QuestionJson>>;
   sharingEnabled: boolean;
   courseInstanceExpired: boolean;
+  validStudentLabelNames?: Set<string>;
 }): { warnings: string[]; errors: string[] } {
   const warnings: string[] = [];
   const errors: string[] = [];
@@ -1261,6 +1357,9 @@ function validateAssessment({
       if (rule.examUuid && rule.mode === 'Public') {
         warnings.push('Invalid allowAccess rule: examUuid cannot be used with "mode": "Public"');
       }
+      if (!rule.examUuid && rule.mode === 'Exam') {
+        warnings.push('Invalid allowAccess rule: examUuid is required with "mode": "Exam"');
+      }
     });
   }
 
@@ -1297,7 +1396,13 @@ function validateAssessment({
       let alternatives: (QuestionPointsJson & { allowRealTimeGrading: boolean })[] = [];
       if (zoneQuestion.alternatives && zoneQuestion.id) {
         errors.push('Cannot specify both "alternatives" and "id" in one question');
-      } else if (zoneQuestion.alternatives) {
+      }
+      if (zoneQuestion.alternatives && zoneQuestion.preferences) {
+        errors.push(
+          'Cannot specify "preferences" on an alternative group. Set "preferences" on each alternative instead.',
+        );
+      }
+      if (zoneQuestion.alternatives) {
         zoneQuestion.alternatives.forEach((alternative) => checkAndRecordQid(alternative.id));
         alternatives = zoneQuestion.alternatives.map((alternative) => {
           return {
@@ -1532,6 +1637,29 @@ function validateAssessment({
     });
   }
 
+  // Validate access control rules if defined
+  if (assessment.accessControl) {
+    const accessControlValidation = validateAccessControlArray({
+      accessControlJsonArray: assessment.accessControl,
+      validStudentLabelNames,
+    });
+    errors.push(...accessControlValidation.errors);
+    warnings.push(...accessControlValidation.warnings);
+  }
+
+  if (assessment.zones[0]?.lockpoint) {
+    errors.push('The first zone cannot have lockpoint: true');
+  }
+
+  assessment.zones.forEach((zone) => {
+    // A lockpoint zone with no questions would create a pointless barrier -
+    // the student would have to cross a lockpoint with nothing to work on
+    // in the zone, which is almost certainly a configuration mistake.
+    if (zone.lockpoint && zone.numberChoose === 0) {
+      errors.push('A lockpoint zone must include at least one selectable question');
+    }
+  });
+
   return { warnings, errors };
 }
 
@@ -1666,6 +1794,34 @@ function validateCourseInstance({
     }
   }
 
+  if (courseInstance.studentLabels) {
+    const result = deduplicateByName(courseInstance.studentLabels);
+    if (result.duplicates.size > 0) {
+      const duplicateNamesString = [...result.duplicates].map((name) => `"${name}"`).join(', ');
+      warnings.push(
+        `Found duplicates in 'studentLabels': ${duplicateNamesString}. Only the last of each duplicate will be synced.`,
+      );
+      courseInstance.studentLabels = result.entries;
+    }
+
+    const uuidCounts = new Map<string, string[]>();
+    for (const label of courseInstance.studentLabels) {
+      const names = uuidCounts.get(label.uuid);
+      if (names) {
+        names.push(label.name);
+      } else {
+        uuidCounts.set(label.uuid, [label.name]);
+      }
+    }
+    for (const [uuid, names] of uuidCounts) {
+      if (names.length > 1) {
+        errors.push(
+          `Found duplicate UUID "${uuid}" in 'studentLabels' for labels: ${names.map((n) => `"${n}"`).join(', ')}.`,
+        );
+      }
+    }
+  }
+
   return { warnings, errors };
 }
 
@@ -1707,7 +1863,7 @@ export async function loadQuestions({
 /**
  * Loads all course instances in a course directory.
  */
-export async function loadCourseInstances({
+async function loadCourseInstances({
   coursePath,
   sharingEnabled,
 }: {
@@ -1734,18 +1890,20 @@ export async function loadCourseInstances({
 /**
  * Loads all assessments in a course instance.
  */
-export async function loadAssessments({
+async function loadAssessments({
   coursePath,
   courseInstanceDirectory,
   courseInstanceExpired,
   questions,
   sharingEnabled,
+  validStudentLabelNames,
 }: {
   coursePath: string;
   courseInstanceDirectory: string;
   courseInstanceExpired: boolean;
   questions: Record<string, InfoFile<QuestionJson>>;
   sharingEnabled: boolean;
+  validStudentLabelNames?: Set<string>;
 }): Promise<Record<string, InfoFile<AssessmentJson>>> {
   const assessmentsPath = path.join('courseInstances', courseInstanceDirectory, 'assessments');
   const assessments = await loadInfoForDirectory({
@@ -1761,6 +1919,7 @@ export async function loadAssessments({
         questions,
         sharingEnabled,
         courseInstanceExpired,
+        validStudentLabelNames,
       }),
     recursive: true,
   });

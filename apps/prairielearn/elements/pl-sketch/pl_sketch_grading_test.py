@@ -172,7 +172,7 @@ def test_match_fun(
     x2: float,
 ) -> None:
     grader = default_grader.copy()
-    grader["type"] = "match-fun"
+    grader["type"] = "match-function"
     grader["toolid"] = [toolid]
     grader["xrange"] = [x1, x2]
     grader["fun"] = fun

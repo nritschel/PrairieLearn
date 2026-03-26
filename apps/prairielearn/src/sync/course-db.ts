@@ -28,6 +28,8 @@ import {
   type QuestionJson,
   type QuestionPointsJson,
   type TagJson,
+  validateRuleCreditMonotonicity,
+  validateRuleDateOrdering,
 } from '../schemas/index.js';
 import * as schemas from '../schemas/index.js';
 
@@ -1146,6 +1148,9 @@ export function validateAccessControlArray({
   const warnings: string[] = [];
 
   if (accessControlJsonArray.length === 0) {
+    warnings.push(
+      'accessControl array is empty. Add at least one rule or remove the accessControl key.',
+    );
     return { errors, warnings };
   }
 
@@ -1207,6 +1212,14 @@ export function validateAccessControlArray({
       errors.push(
         'listBeforeRelease can only be specified on the main rule (the rule without labels).',
       );
+    }
+
+    const dateErrors = validateRuleDateOrdering(rule);
+    errors.push(...dateErrors);
+    // Credit monotonicity assumes deadlines are chronological; skip if dates
+    // are out of order to avoid misleading "not monotonically decreasing" errors.
+    if (dateErrors.length === 0) {
+      errors.push(...validateRuleCreditMonotonicity(rule));
     }
   }
 

@@ -1401,10 +1401,10 @@ function validateAssessment({
   };
   assessment.zones.forEach((zone) => {
     zone.questions.map((zoneQuestion) => {
-      const effectiveAlternativeGroupAllowRealTimeGrading =
+      const effectiveAlternativePoolAllowRealTimeGrading =
         zoneQuestion.allowRealTimeGrading ?? zone.allowRealTimeGrading ?? allowRealTimeGrading;
 
-      // We'll normalize either single questions or alternative groups
+      // We'll normalize either single questions or alternative pools
       // to make validation easier
       let alternatives: (QuestionPointsJson & { allowRealTimeGrading: boolean })[] = [];
       if (zoneQuestion.alternatives && zoneQuestion.id) {
@@ -1412,7 +1412,7 @@ function validateAssessment({
       }
       if (zoneQuestion.alternatives && zoneQuestion.preferences) {
         errors.push(
-          'Cannot specify "preferences" on an alternative group. Set "preferences" on each alternative instead.',
+          'Cannot specify "preferences" on an alternative pool. Set "preferences" on each alternative instead.',
         );
       }
       if (zoneQuestion.alternatives) {
@@ -1425,7 +1425,7 @@ function validateAssessment({
             autoPoints: alternative.autoPoints ?? zoneQuestion.autoPoints,
             manualPoints: alternative.manualPoints ?? zoneQuestion.manualPoints,
             allowRealTimeGrading:
-              alternative.allowRealTimeGrading ?? effectiveAlternativeGroupAllowRealTimeGrading,
+              alternative.allowRealTimeGrading ?? effectiveAlternativePoolAllowRealTimeGrading,
           };
         });
       } else if (zoneQuestion.id) {
@@ -1437,7 +1437,7 @@ function validateAssessment({
             maxAutoPoints: zoneQuestion.maxAutoPoints,
             autoPoints: zoneQuestion.autoPoints,
             manualPoints: zoneQuestion.manualPoints,
-            allowRealTimeGrading: effectiveAlternativeGroupAllowRealTimeGrading,
+            allowRealTimeGrading: effectiveAlternativePoolAllowRealTimeGrading,
           },
         ];
       } else {

@@ -8,8 +8,10 @@
  * Dots are allowed in non-leading positions of each path segment (e.g., `foo.bar` or `foo/bar.baz`
  * are valid, but `.foo` or `foo/.bar` are not).
  */
-export const SHORT_NAME_REGEX =
-  /^[A-Za-z0-9\-_][A-Za-z0-9\-_.]*(\/[A-Za-z0-9\-_][A-Za-z0-9\-_.]*)*$/v;
+export const SHORT_NAME_REGEX = new RegExp(
+  String.raw`^[A-Za-z0-9\-_][A-Za-z0-9\-_.]*(\/[A-Za-z0-9\-_][A-Za-z0-9\-_.]*)*$`,
+  'v',
+); // TODO: Once we target ES2024+, we can use a regex literal instead of `new RegExp`.
 
 /**
  * String pattern for short names, suitable for use in HTML pattern attributes.

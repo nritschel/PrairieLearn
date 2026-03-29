@@ -64,6 +64,7 @@
   },
   "resolutions": {
     "notebookjs/jsdom": "^28.0.0",
-    "typescript-cp/tar": "*"
+    "typescript-cp/tar": "*",
+    "@typescript/native-preview": "7.0.0-dev.20260305.1"
   }
 }

@@ -5,13 +5,13 @@ import { withResolvers } from './index.js';
 describe('withResolvers', () => {
   it('resolves with the correct value', async () => {
     const { promise, resolve } = withResolvers<number>();
-    resolve(123);
+    setTimeout(() => resolve(123), 10);
     await expect(promise).resolves.toBe(123);
   });
 
   it('rejects with the correct reason', async () => {
     const { promise, reject } = withResolvers<number>();
-    reject(new Error('fail'));
+    setTimeout(() => reject(new Error('fail')), 10);
     await expect(promise).rejects.toThrow('fail');
   });
 });

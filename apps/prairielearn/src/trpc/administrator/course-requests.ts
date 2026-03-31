@@ -20,6 +20,8 @@ import { checkGithubRepositoryExists } from '../../lib/github.js';
 import { normalizeCoursePathInput } from './course-path.js';
 import { requireAdministrator, t } from './init.js';
 
+export interface AdminCourseRequestError {}
+
 const deny = t.procedure
   .use(requireAdministrator)
   .input(z.object({ courseRequestId: IdSchema }))

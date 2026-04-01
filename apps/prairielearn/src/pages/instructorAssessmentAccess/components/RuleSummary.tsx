@@ -302,7 +302,7 @@ export function RuleSummaryCard({
   const overrideRule = !isMainRule ? (rule as OverrideData) : null;
 
   const students =
-    overrideRule?.appliesTo.targetType === 'individual' ? overrideRule.appliesTo.individuals : [];
+    overrideRule?.appliesTo.targetType === 'enrollment' ? overrideRule.appliesTo.enrollments : [];
 
   const studentLabels =
     overrideRule?.appliesTo.targetType === 'student_label'
@@ -402,14 +402,10 @@ export function RuleSummaryCard({
           <div className="mb-2">
             <span className="text-body-secondary">Applies to: </span>
             {students.map((student, idx) => (
-              <span key={student.enrollmentId ?? student.uid}>
-                {student.enrollmentId ? (
-                  <a href={getStudentEnrollmentUrl(courseInstanceId, student.enrollmentId)}>
-                    {student.name ?? student.uid}
-                  </a>
-                ) : (
-                  <span>{student.name ?? student.uid}</span>
-                )}
+              <span key={student.enrollmentId}>
+                <a href={getStudentEnrollmentUrl(courseInstanceId, student.enrollmentId)}>
+                  {student.name ?? student.uid}
+                </a>
                 {idx < students.length - 1 && ', '}
               </span>
             ))}

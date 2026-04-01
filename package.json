@@ -63,8 +63,8 @@
     "vitest": "^4.0.18"
   },
   "resolutions": {
+    "@typescript/native-preview": "7.0.0-dev.20260305.1",
     "notebookjs/jsdom": "^28.0.0",
-    "typescript-cp/tar": "*",
-    "@typescript/native-preview": "7.0.0-dev.20260305.1"
+    "typescript-cp/tar": "*"
   }
 }

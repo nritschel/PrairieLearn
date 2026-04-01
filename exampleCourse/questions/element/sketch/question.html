@@ -40,14 +40,14 @@
     <p>This question has no grading criteria, so any non-empty submission is considered correct.</p>
   </pl-question-panel>
   <pl-sketch answers-name="sketch-tools">
-    <pl-sketch-tool id="pt" type="point"></pl-sketch-tool>
-    <pl-sketch-tool id="hl" type="horizontal-line" group="Asymptote lines"></pl-sketch-tool>
-    <pl-sketch-tool id="vl" type="vertical-line" group="Asymptote lines"></pl-sketch-tool>
-    <pl-sketch-tool id="li" type="line"></pl-sketch-tool>
-    <pl-sketch-tool id="fd" type="free-draw"></pl-sketch-tool>
-    <pl-sketch-tool id="sp" type="spline"></pl-sketch-tool>
-    <pl-sketch-tool id="pl" type="polyline"></pl-sketch-tool>
-    <pl-sketch-tool id="pg" type="polygon"></pl-sketch-tool>
+    <pl-sketch-tool id="point" type="point"></pl-sketch-tool>
+    <pl-sketch-tool id="hline" type="horizontal-line" group="Asymptote lines"></pl-sketch-tool>
+    <pl-sketch-tool id="vline" type="vertical-line" group="Asymptote lines"></pl-sketch-tool>
+    <pl-sketch-tool id="line" type="line"></pl-sketch-tool>
+    <pl-sketch-tool id="freedraw" type="free-draw"></pl-sketch-tool>
+    <pl-sketch-tool id="spline" type="spline"></pl-sketch-tool>
+    <pl-sketch-tool id="polyline" type="polyline"></pl-sketch-tool>
+    <pl-sketch-tool id="polygon" type="polygon"></pl-sketch-tool>
   </pl-sketch>
 </pl-card>
 
@@ -78,13 +78,13 @@
     </p>
   </pl-question-panel>
   <pl-sketch answers-name="sketch-grade" allow-blank="true">
-    <pl-sketch-tool id="pt" type="point"></pl-sketch-tool>
-    <pl-sketch-grade type="match" tool-id="pt" x="0" y="0"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pt" x="1" y="1"></pl-sketch-grade> 
-    <pl-sketch-grade type="count" tool-id="pt" count="3"></pl-sketch-grade> 
-    <pl-sketch-grade type="undefined-in" tool-id="pt" x-range="2,"></pl-sketch-grade> 
-    <pl-sketch-grade type="less-than" tool-id="pt" y="3"></pl-sketch-grade> 
-    <pl-sketch-grade type="greater-than" tool-id="pt" y="-3"></pl-sketch-grade> 
+    <pl-sketch-tool id="p" type="point"></pl-sketch-tool>
+    <pl-sketch-grade type="match" tool-id="p" x="0" y="0"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="p" x="1" y="1"></pl-sketch-grade> 
+    <pl-sketch-grade type="count" tool-id="p" count="3"></pl-sketch-grade> 
+    <pl-sketch-grade type="undefined-in" tool-id="p" x-range="2,"></pl-sketch-grade> 
+    <pl-sketch-grade type="less-than" tool-id="p" y="3"></pl-sketch-grade> 
+    <pl-sketch-grade type="greater-than" tool-id="p" y="-3"></pl-sketch-grade> 
   </pl-sketch>
 </pl-card>
 
@@ -105,10 +105,10 @@
     </p>
   </pl-question-panel>
   <pl-sketch answers-name="sketch-grade-function" allow-blank="true">
-    <pl-sketch-tool id="fd" type="free-draw"></pl-sketch-tool>
-    <pl-sketch-grade type="defined-in" tool-id="fd" x-range="-1," stage="1"></pl-sketch-grade> 
-    <pl-sketch-grade type="match-function" tool-id="fd" function="x" x-range="-1,1" stage="2" weight="3"></pl-sketch-grade> 
-    <pl-sketch-grade type="monot-increasing" tool-id="fd" x-range="1," stage="2"></pl-sketch-grade> 
+    <pl-sketch-tool id="draw" type="free-draw"></pl-sketch-tool>
+    <pl-sketch-grade type="defined-in" tool-id="draw" x-range="-1," stage="1"></pl-sketch-grade> 
+    <pl-sketch-grade type="match-function" tool-id="draw" function="x" x-range="-1,1" stage="2" weight="3"></pl-sketch-grade> 
+    <pl-sketch-grade type="monot-increasing" tool-id="draw" x-range="1," stage="2"></pl-sketch-grade> 
   </pl-sketch>
 </pl-card>
 
@@ -124,15 +124,15 @@
       students a low-stakes opportunity to practice all available drawing tools before using them in exams.</p>
   </pl-question-panel>
   <pl-sketch answers-name="sketch-grade-poly" x-range="-1,5" allow-blank="true">
-    <pl-sketch-tool id="pl" type="polygon"></pl-sketch-tool>
-    <pl-sketch-grade type="defined-in" tool-id="pl" x-range="0,2"></pl-sketch-grade> 
-    <pl-sketch-grade type="greater-than" tool-id="pl" function="-x" x-range="0,2"></pl-sketch-grade> 
-    <pl-sketch-grade type="less-than" tool-id="pl" function="x" x-range="0,2"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pl" x="0" y="0"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pl" x="1" y="-1"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pl" x="1" y="1"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pl" x="2" y="-2"></pl-sketch-grade> 
-    <pl-sketch-grade type="match" tool-id="pl" x="2" y="2"></pl-sketch-grade> 
+    <pl-sketch-tool id="area" type="polygon"></pl-sketch-tool>
+    <pl-sketch-grade type="defined-in" tool-id="area" x-range="0,2"></pl-sketch-grade> 
+    <pl-sketch-grade type="greater-than" tool-id="area" function="-x" x-range="0,2"></pl-sketch-grade> 
+    <pl-sketch-grade type="less-than" tool-id="area" function="x" x-range="0,2"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="area" x="0" y="0"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="area" x="1" y="-1"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="area" x="1" y="1"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="area" x="2" y="-2"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="area" x="2" y="2"></pl-sketch-grade> 
 
     <!-- Ungraded helper lines for easier shading -->
     <pl-sketch-tool id="sp1" type="spline" read-only="true"></pl-sketch-tool>

@@ -21,9 +21,11 @@ Sketch curves and other mathematical objects (e.g., points, asymptotes, polygons
     <pl-sketch-initial tool-id="pt" coordinates="0,1"></pl-sketch-initial>
     <pl-sketch-initial tool-id="pt" coordinates="1,2"></pl-sketch-initial>
     <pl-sketch-initial tool-id="pt" coordinates="2,4"></pl-sketch-initial>
-    <pl-sketch-grade type="match" debug="true" tool-id="hl" y="0"></pl-sketch-grade> 
-    <pl-sketch-grade type="count" debug="true" tool-id="hl" count="1"></pl-sketch-grade> 
-    <pl-sketch-grade type="match-function" debug="true" tool-id="fd" function="2**x"></pl-sketch-grade> 
+    <pl-sketch-grade type="match" tool-id="hl" y="0"></pl-sketch-grade> 
+    <pl-sketch-grade type="count" tool-id="hl" count="1"></pl-sketch-grade> 
+    <pl-sketch-grade type="match-function" tool-id="fd" function="2**x"></pl-sketch-grade> 
+    <pl-sketch-solution tool-id="fd" function="2**x"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="hl" coordinates="0"></pl-sketch-solution>
   </pl-sketch>
 ```
 
@@ -47,11 +49,12 @@ Due to the highly graphical nature of this element, there are currently no viabl
 
 The customizations above are general settings that apply to the entire sketching canvas. Note that some settings, such as grid lines and axis labels, are determined automatically and are not currently customizable.
 
-To set up the element and to customize grading, three types of elements can be nested inside the main element:
+To set up the element and to customize grading, four types of elements can be nested inside the main element:
 
 - `pl-sketch-tool` elements define drawing tools that are used to create sketches inside the canvas.
 - `pl-sketch-grade` elements define grading criteria for student submissions. Criteria typically refer to one or more specific drawing tools.
 - `pl-sketch-initial` elements define drawings that are already present in the initial canvas. Initial drawings always refer to a specific drawing tool.
+- `pl-sketch-solution` elements define drawings that are rendered in solution panel canvas. Solution drawings always refer to a specific drawing tool.
 
 ### Defining drawing tools with `pl-sketch-tool`
 
@@ -216,22 +219,26 @@ If any grading criterion with a lower stage number than another criterion fails,
 
 Note that all criteria are still considered when determining achievable points, unless they are defined with `weight="0"`. For the previous example, the `defined-in` tag could be assigned `stage="1"` and `undefined-in` tag could be assigned `stage="2"`, so that students do not receive any points unless they define the function in the correct range.
 
-## Adding predefined objects with `pl-sketch-initial`
+## Adding initial and solution drawings with `pl-sketch-initial` and `pl-sketch-solution`
 
-For both read-only elements and ones that can be edited by students, initial drawings can be added to the canvas that are present when the question is initially rendered. Initial drawings refer to a tool that determines their type and styling. If the tool has `read-only="true"` set, it does not appear in the toolbar and the added objects are fixed (e.g., as a given function that needs to be annotated). Otherwise, objects can be edited by students just like their own drawings.
+For both read-only elements and ones that can be edited by students, initial and solution drawings can be added to the canvas. Initial drawings are present when the question is initially rendered in the question panel, while solution drawings are present in the solution panel to show a possible sample solution. Note that the sample solution cannot be inferred from the grading criteria because the criteria might allow for a range of possible solutions.
+
+Initial and solution drawings refer to a tool that determines their type and styling. For initial drawings, if the tool has `read-only="true"` set, it does not appear in the toolbar and the added objects are fixed (e.g., as a given function that needs to be annotated). Otherwise, objects can be edited by students just like their own drawings.
+
+The following attributes apply to both initial and solution drawings:
 
 | Parameter     | Type   | Default | Description                                                                                                                                                                                                                                                      |
 | ------------- | ------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tool-id`     | string | -       | `id` of the tool to be used for this initial drawing.                                                                                                                                                                                                            |
+| `tool-id`     | string | -       | `id` of the tool to be used for this drawing.                                                                                                                                                                                                                    |
 | `coordinates` | string | -       | Comma-separated list of coordinates (e.g., `-4.5`, `0,1,2,3`, or `(0,1),(2,3)`) to be used for the drawing. Parentheses can be used for readability, but are ignored during rendering.                                                                           |
 | `function`    | string | -       | Symbolic function definition (see below) to be used to draw a `spline` or `free-draw` object. Only one of `coordinates` and `fun` can be used.                                                                                                                   |
 | `x-range`     | string | `","`   | Interval for which the function definition should be plotted as a comma-separated pair of numbers, e.g. `"-3,1.5"`. Only applicable if `fun` is used. Start and/or end of the range can be blank (e.g., `"-3,"` or `",-3"`) to extend to the edge of the canvas. |
 
 Note that the expected number and interpretation of coordinates depends on the type of tool that is referenced. The `vertical-line` and `horizontal-line` tools only require a single coordinate (`x` or `y`). The `point` tool expects 2 coordinates `(x,y)`, while `line` needs 4 total (`(x1,y1),(x2,y2)`), and complex line tools or `polygon` need an even number of 4 or more total coordinates that represent x-y-pairs of points connected by the line. Multiple tags can reference the same tool to create independent drawings (e.g., multiple points or disconnected lines).
 
-### Rendering symbolic functions with `pl-sketch-initial`
+### Rendering symbolic functions with `pl-sketch-initial` and `pl-sketch-solution`
 
-In addition to drawing individual coordinates, `pl-sketch-initial` also supports pre-rendering a function based on a given symbolic definition. Functions can only be rendered using a `spline` or `free-draw` type tool, and are converted into a series of line fragments before being sent to the client, so the symbolic definition is not revealed to the student.
+In addition to drawing individual coordinates, `pl-sketch-initial` and `pl-sketch-solution` also support rendering a function based on a given symbolic definition. Functions can only be rendered using a `spline` or `free-draw` type tool, and are converted into a series of line fragments before being sent to the client, so the symbolic definition is not revealed to the student.
 
 For details on what types of symbolic expressions are supported, see the relevant section in `pl-sketch-grade`. Note that functions are rendered as one continuous line, so for non-continuous functions, it might be necessary to split them into multiple continuous intervals to avoid visual artifacts. For example:
 

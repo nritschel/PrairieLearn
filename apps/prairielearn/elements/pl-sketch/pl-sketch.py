@@ -9,8 +9,8 @@ import prairielearn as pl
 from pl_sketch_grading import grade_submission
 from sketchresponse.types import (
     SketchCanvasSize,
+    SketchDrawing,
     SketchGrader,
-    SketchInitial,
     SketchTool,
 )
 from sketchresponse.utils import format_initials, parse_function_string
@@ -94,7 +94,6 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         toolbar.append(fd)
 
     # Add axes/grid for the canvas (technically a "tool" on the client side)
-    # TODO: Some fancier math might be nice here to better support unusual range configurations
     axes_plugins = {
         "name": "axes",
         "xaxisLabel": {"value": "x", "dx": 10, "dy": 10},
@@ -161,18 +160,21 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         "height": height,
     }
 
-    # Validate and set graders and initial values
+    # Validate and set graders, initial and solution values
     graders: list = []
     initials: list = []
+    solutions: list = []
 
     for html_tag in element:
         if html_tag.tag == "pl-sketch-grade":
             grader = check_grader(html_tag, tool_data, ranges_config)
             graders.append(grader)
         elif html_tag.tag == "pl-sketch-initial":
-            # Here we check and set up initials in a clean data format
-            initial = check_initial(html_tag, tool_data, ranges_config)
+            initial = check_drawing(html_tag, tool_data, ranges_config)
             initials.append(initial)
+        elif html_tag.tag == "pl-sketch-solution":
+            solution = check_drawing(html_tag, tool_data, ranges_config)
+            solutions.append(solution)
 
     # Here we convert the data format into the client side representation that is grouped by tool
     initial_ids = {initial["toolid"] for initial in initials}
@@ -181,12 +183,20 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         for initial_id in initial_ids
     }
 
+    # Repeating the same process for solution data, which effectively becomes the initial state of the answer panel
+    solution_ids = {solution["toolid"] for solution in solutions}
+    solution_state = {
+        solution_id: format_initials(solutions, tool_data[solution_id], ranges_config)
+        for solution_id in solution_ids
+    }
+
     # Saving all processed data into a dictionary
     data["params"][name] = {
         "sketch_config": {
             "plugins": toolbar,
             "tool_data": tool_data,
             "initial_state": initial_state,
+            "solution_state": solution_state,
             "ranges": ranges_config,
             "graders": graders,
         }
@@ -621,88 +631,84 @@ def check_grader(
     return tool_params
 
 
-def check_initial(
-    initial_tag: lxml.html.HtmlElement,
+def check_drawing(
+    drawing_tag: lxml.html.HtmlElement,
     tool_data: dict[str, SketchTool],
     ranges: SketchCanvasSize,
-) -> SketchInitial:
+) -> SketchDrawing:
     """
-    Checks that a sketch initial drawing tag is valid (similar to PL element tag validation, but accounting for
-    the many different attributes for each tool that is referenced by the tag).
+    Checks that a sketch drawing tag (initial or solution) is valid (similar to PL element tag validation, but
+    accounting for the many different attributes for each drawing that is referenced by the tag).
 
     Returns:
-        The initial drawing data converted into a typed dictionary
+        The drawing data converted into a typed dictionary
 
     Raises:
         ValueError: If data in the tag is invalid
     """
     # check that toolid parameter there for all
-    initial_tool = pl.get_string_attrib(initial_tag, "tool-id")
-    initial_coords = pl.get_string_attrib(initial_tag, "coordinates", None)
-    initial_fun = pl.get_string_attrib(initial_tag, "function", None)
-    initial_xrange = split_range(
-        pl.get_string_attrib(initial_tag, "x-range", ","),
+    drawing_tool = pl.get_string_attrib(drawing_tag, "tool-id")
+    drawing_coords = pl.get_string_attrib(drawing_tag, "coordinates", None)
+    drawing_fun = pl.get_string_attrib(drawing_tag, "function", None)
+    drawing_xrange = split_range(
+        pl.get_string_attrib(drawing_tag, "x-range", ","),
         ranges["x_start"],
         ranges["x_end"],
     )
 
-    if initial_tool not in tool_data:
-        raise ValueError(
-            f'Initial drawing tool "{initial_tool}" is not a valid tool ID.'
-        )
+    if drawing_tool not in tool_data:
+        raise ValueError(f'Drawing tool "{drawing_tool}" is not a valid tool ID.')
 
-    if (initial_coords is None and initial_fun is None) or (
-        initial_coords is not None and initial_fun is not None
+    if (drawing_coords is None and drawing_fun is None) or (
+        drawing_coords is not None and drawing_fun is not None
     ):
         raise ValueError(
             'Each initial drawing element needs either a "coordinates" or a "function" attribute.'
         )
 
     coords = []
-    if initial_coords is not None:
+    if drawing_coords is not None:
         coords.extend(
             float(coord.replace("(", "").replace(")", "").strip())
-            for coord in initial_coords.split(",")
+            for coord in drawing_coords.split(",")
         )
 
-    match tool_data[initial_tool]["name"]:
+    match tool_data[drawing_tool]["name"]:
         case "horizontal-line" | "vertical-line":
             if len(coords) != 1:
                 raise ValueError(
-                    "Initial drawings for horizontal/vertical tools need exactly one coordinate."
+                    "Drawings for horizontal/vertical tools need exactly one coordinate."
                 )
         case "point":
             if len(coords) != 2:
-                raise ValueError(
-                    "Initial drawings for points need exactly two coordinates."
-                )
+                raise ValueError("Drawings for points need exactly two coordinates.")
         case "line-segment":
             if len(coords) != 4:
                 raise ValueError(
-                    "Initial drawings for lines need exactly four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines need exactly four coordinates (x/y pairs for start and end)."
                 )
         case "polyline":
             if len(coords) < 4 or len(coords) % 2 != 0:
                 raise ValueError(
-                    "Initial drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
                 )
         case "spline" | "freeform":
-            if initial_fun is not None:
-                parse_function_string(initial_fun)
+            if drawing_fun is not None:
+                parse_function_string(drawing_fun)
             elif len(coords) < 4 or len(coords) % 2 != 0:
                 raise ValueError(
-                    "Initial drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
                 )
         case _:
-            raise ValueError(f'Unknown tool type "{tool_data[initial_tool]["name"]}"')
+            raise ValueError(f'Unknown tool type "{tool_data[drawing_tool]["name"]}"')
 
-    initial: SketchInitial = {
-        "toolid": initial_tool,
+    drawing: SketchDrawing = {
+        "toolid": drawing_tool,
         "coordinates": coords,
-        "fun": initial_fun,
-        "xrange": initial_xrange,
+        "fun": drawing_fun,
+        "xrange": drawing_xrange,
     }
-    return initial
+    return drawing
 
 
 def render(element_html: str, data: pl.QuestionData) -> str:
@@ -712,6 +718,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     ranges = data["params"][name]["sketch_config"]["ranges"]
     toolbar = data["params"][name]["sketch_config"]["plugins"]
     initial = data["params"][name]["sketch_config"]["initial_state"]
+    solution = data["params"][name]["sketch_config"]["solution_state"]
 
     enforce_bounds = pl.get_boolean_attrib(
         element, "enforce-bounds", ENFORCE_BOUNDS_DEFAULT
@@ -785,8 +792,6 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "format_error": data["format_errors"].get(name, None),
             "read_only": read_only,
         }
-        with open("pl-sketch.mustache") as f:
-            return chevron.render(f, html_params).strip()
     elif data["panel"] == "submission":
         # Using a random ID here as each SketchResponse instance needs a unique ID, and only the question panel ID
         # matters because it gets parsed on submission. All other panel IDs don't matter as long as they are unique.
@@ -806,9 +811,8 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "format_error": data["format_errors"].get(name, None),
             "read_only": read_only,
         }
-        with open("pl-sketch.mustache") as f:
-            return chevron.render(f, html_params).strip()
-    else:  # answer panel
+    elif len(solution) > 0:  # answer panel (has solution to display)
+        config["initialstate"] = solution
         config["readonly"] = True
         random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
         html_params = {
@@ -817,12 +821,13 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "config": base64.b64encode(json.dumps(config).encode("utf-8")).decode(
                 "utf-8"
             ),
-            "scored": scored,
-            "score": score,
-            "feedback": feedback,
         }
-        with open("pl-sketch.mustache") as f:
-            return chevron.render(f, html_params).strip()
+    else:  # answer panel (no solution to display)
+        html_params = {
+            "no_answer": True,
+        }
+    with open("pl-sketch.mustache") as f:
+        return chevron.render(f, html_params).strip()
 
 
 def parse(element_html: str, data: pl.QuestionData) -> None:

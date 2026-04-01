@@ -363,6 +363,7 @@ wheels = [
 name = "griffelib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ad/06/eccbd311c9e2b3ca45dbc063b93134c57a1ccc7607c5e545264ad092c4a9/griffelib-2.0.0.tar.gz", hash = "sha256:e504d637a089f5cab9b5daf18f7645970509bf4f53eda8d79ed71cce8bd97934", size = 166312, upload-time = "2026-03-23T21:06:55.954Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4d/51/c936033e16d12b627ea334aaaaf42229c37620d0f15593456ab69ab48161/griffelib-2.0.0-py3-none-any.whl", hash = "sha256:01284878c966508b6d6f1dbff9b6fa607bc062d8261c5c7253cb285b06422a7f", size = 142004, upload-time = "2026-02-09T19:09:40.561Z" },
 ]
@@ -1078,7 +1079,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = "==1.8.0" },
     { name = "scipy", specifier = "==1.17.1" },
     { name = "seaborn", specifier = "==0.13.2" },
-    { name = "sketchresponse", specifier = "==0.0.3" },
+    { name = "sketchresponse", specifier = "==0.0.5" },
     { name = "statsmodels", specifier = "==0.14.6" },
     { name = "sympy", specifier = "==1.14.0" },
     { name = "text-unidecode", specifier = "==1.3" },
@@ -1588,16 +1589,16 @@ wheels = [
 
 [[package]]
 name = "sketchresponse"
-version = "0.0.3"
+version = "0.0.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "future" },
     { name = "numpy" },
     { name = "sympy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/87/b1/8d791a882a77b628b830376ebeb416078070399e04e62285bf9e60cecc71/sketchresponse-0.0.3.tar.gz", hash = "sha256:71bee921c9ba42e06b29789ffd48f7efbda009226612fd15a957fbad576ebeeb", size = 65987, upload-time = "2026-02-16T02:57:55.928Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/6d/ea/3410f497d70f7b1f0d4446e5f401b5fec68986a6ebeea10ddcd8797f9564/sketchresponse-0.0.5.tar.gz", hash = "sha256:748ec599d7562314efdbb34588bd355f21eb80931c9d073682e6d86b06040577", size = 65909, upload-time = "2026-04-01T03:01:31.006Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/09/417db604c03671933cccacffbf6ae60d9c4635447527bd3fd504eb1e7924/sketchresponse-0.0.3-py3-none-any.whl", hash = "sha256:7642125ec1f7bae308617ddacb3347b877dc7f559f088f7a9b94262e234a96c6", size = 76253, upload-time = "2026-02-16T02:57:54.249Z" },
+    { url = "https://files.pythonhosted.org/packages/cb/56/b06ed32ce7755c490a0182b752432152b171419091b9b976180a780c90eb/sketchresponse-0.0.5-py3-none-any.whl", hash = "sha256:f8894f1c417a009a3f05ca2ab4a9d0bdb877e6f9b7a79f338e9fa6412ce21955", size = 76165, upload-time = "2026-04-01T03:01:29.535Z" },
 ]
 
 [[package]]

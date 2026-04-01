@@ -1,4 +1,7 @@
-{{^answer}}
+{{#no_answer}}
+  No answer to display.
+{{/no_answer}}
+{{^no_answer}}
   {{^read_only}}
     {{#scored}}
       {{#all_correct}}
@@ -34,7 +37,7 @@
         <span class="mr-1">Invalid</span>
         <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
     </button>
-{{/format_error}}
+  {{/format_error}}
   {{/read_only}}
     <div class="sketchresponse">
       <!-- Base64-encoded config data for SketchResponse below -->
@@ -54,7 +57,7 @@
             <div class="alert alert-success">
             <strong>Feedback:</strong>
               <ul>
-                 {{#feedback}}
+                  {{#feedback}}
                 <li>
                   {{#correct}}
                   <span>
@@ -85,7 +88,7 @@
                             <ul>  
                             {{#debug}}     
                               <li>
-                               <div>&gt;&gt; {{message}}</div>
+                                <div>&gt;&gt; {{message}}</div>
                               </li>
                             {{/debug}}
                             </ul>       
@@ -113,7 +116,7 @@
                             <ul>  
                             {{#debug}}     
                               <li>
-                               <div>&gt;&gt; {{message}}</div>
+                                <div>&gt;&gt; {{message}}</div>
                               </li>
                             {{/debug}}
                             </ul>       
@@ -127,4 +130,4 @@
         {{/all_correct}}
     {{/scored}}
   {{/read_only}}
-{{/answer}}
+{{/no_answer}}

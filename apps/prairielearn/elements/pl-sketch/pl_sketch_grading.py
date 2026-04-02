@@ -23,36 +23,41 @@ def grade_submission(
         raise ValueError("Cannot grade empty submission")
 
     submitted_answer = json.loads(base64.b64decode(submission).decode("utf-8"))
-    tool_dict = data["params"][name]["sketch_config"]["tool_data"]
+    config = data["params"][name]["config"]
+    tool_dict = data["params"][name]["tool_data"]
+
     match grader["type"]:
         case "match":
-            return match(grader, submitted_answer, tool_dict)
+            return match(grader, submitted_answer, config, tool_dict)
         case "count":
-            return count(grader, submitted_answer, tool_dict)
+            return count(grader, submitted_answer, config, tool_dict)
         case "match-function":
-            return match_fun(grader, submitted_answer, tool_dict)
+            return match_fun(grader, submitted_answer, config, tool_dict)
         case "monot-increasing":
-            return monot_increasing(grader, submitted_answer, tool_dict)
+            return monot_increasing(grader, submitted_answer, config, tool_dict)
         case "monot-decreasing":
-            return monot_decreasing(grader, submitted_answer, tool_dict)
+            return monot_decreasing(grader, submitted_answer, config, tool_dict)
         case "concave-up":
-            return concave_up(grader, submitted_answer, tool_dict)
+            return concave_up(grader, submitted_answer, config, tool_dict)
         case "concave-down":
-            return concave_down(grader, submitted_answer, tool_dict)
+            return concave_down(grader, submitted_answer, config, tool_dict)
         case "defined-in":
-            return defined_in(grader, submitted_answer, tool_dict)
+            return defined_in(grader, submitted_answer, config, tool_dict)
         case "undefined-in":
-            return undefined_in(grader, submitted_answer, tool_dict)
+            return undefined_in(grader, submitted_answer, config, tool_dict)
         case "greater-than":
-            return greater_than(grader, submitted_answer, tool_dict)
+            return greater_than(grader, submitted_answer, config, tool_dict)
         case "less-than":
-            return less_than(grader, submitted_answer, tool_dict)
+            return less_than(grader, submitted_answer, config, tool_dict)
         case _:
             raise ValueError(f"Unknown grader type: {grader['type']}")
 
 
 def match(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     x, y = grader["x"], grader["y"]
     feedback_value = ("x = " + str(x)) if x is not None else ("y = " + str(y))
@@ -76,13 +81,13 @@ def match(
     for toolid in tools_to_check:
         tool_used = tool_dict[toolid]["name"]
         if tool_used == "polyline" and tool_dict[toolid]["closed"]:
-            tool_grader = Polygon.Polygons(grader, submission, toolid)
+            tool_grader = Polygon.Polygons(grader, submission, config, toolid)
             correct = tool_grader.contains_point(
                 x=x, y=y, tolerance=tolerance
             )  # no tolerance for (x,y) point currently
         elif tool_used in gf_tools:
             tool_grader = GradeableFunction.GradeableFunction(
-                grader, submission, toolid
+                grader, submission, config, toolid
             )
             if tool_used == "point":
                 correct = tool_grader.has_point_at(x=x, y=y, distTolerance=tolerance)
@@ -91,13 +96,17 @@ def match(
                     x=x, y=y, tolerance=tolerance
                 )  # Note: also has x tolerance
         elif tool_used == "vertical-line":
-            tool_grader = Asymptote.VerticalAsymptotes(grader, submission, toolid)
+            tool_grader = Asymptote.VerticalAsymptotes(
+                grader, submission, config, toolid
+            )
             correct = tool_grader.has_asym_at_value(x, tolerance=tolerance)
         elif tool_used == "horizontal-line":
-            tool_grader = Asymptote.HorizontalAsymptotes(grader, submission, toolid)
+            tool_grader = Asymptote.HorizontalAsymptotes(
+                grader, submission, config, toolid
+            )
             correct = tool_grader.has_asym_at_value(y, tolerance=tolerance)
         elif tool_used == "line-segment":
-            tool_grader = LineSegment.LineSegments(grader, submission, toolid)
+            tool_grader = LineSegment.LineSegments(grader, submission, config, toolid)
             if grader["endpoint"]:
                 correct = tool_grader.check_eps(
                     point=[x, y], mode=grader["endpoint"], tolerance=tolerance
@@ -119,7 +128,10 @@ def match(
 
 
 def match_fun(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     tolerance = grader["tolerance"]
     feedback = grader["feedback"] or "Element does not match expected function."
@@ -129,7 +141,7 @@ def match_fun(
 
     if grader["xyflip"]:
         grader["xrange"] = grader["yrange"]
-        submission = flip_grader_data(submission)
+        submission, config = flip_grader_data(submission, config)
 
     # This should not happen if the grader was validated correctly
     if grader["xrange"] is None or grader["fun"] is None:
@@ -148,7 +160,9 @@ def match_fun(
         correct = False
     for toolid in tools_to_check:
         tool_used = tool_dict[toolid]["name"]
-        tool_grader = GradeableFunction.GradeableFunction(grader, submission, toolid)
+        tool_grader = GradeableFunction.GradeableFunction(
+            grader, submission, config, toolid
+        )
         correct = tool_grader.matches_function(func, x1, x2, tolerance)
         if not correct:
             if debug:
@@ -171,7 +185,10 @@ def match_fun(
 
 
 def count(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     tolerance = grader["tolerance"] or 15
     feedback = grader["feedback"] or "Incorrect number of elements used."
@@ -181,7 +198,7 @@ def count(
         raise ValueError("Encountered count grader without required parameters")
 
     mode = grader["mode"] or "exact"
-    g_tol = screen_to_graph_submission(submission, True, True, tolerance)
+    g_tol = screen_to_graph_submission(submission, config, True, True, tolerance)
     x1, x2 = grader["xrange"]
     debug = grader["debug"]
     debug_message = []
@@ -200,6 +217,7 @@ def count(
                 toolid,
                 tool_dict,
                 submission,
+                config,
                 min(x1 - g_tol, x2 + g_tol),
                 max(x1 - g_tol, x2 + g_tol),
             )
@@ -207,10 +225,13 @@ def count(
                 toolid,
                 tool_dict,
                 submission,
+                config,
                 min(x1 + g_tol, x2 - g_tol),
                 max(x1 + g_tol, x2 - g_tol),
             )
-            num_c = get_num_in_bound_occurrences(toolid, tool_dict, submission, x1, x2)
+            num_c = get_num_in_bound_occurrences(
+                toolid, tool_dict, submission, config, x1, x2
+            )
             if grader["count"] not in (num_a, num_b, num_c):
                 correct = False
                 if debug:
@@ -224,6 +245,7 @@ def count(
                 toolid,
                 tool_dict,
                 submission,
+                config,
                 min(x1 - g_tol, x2 + g_tol),
                 max(x1 - g_tol, x2 + g_tol),
             )
@@ -240,6 +262,7 @@ def count(
                 toolid,
                 tool_dict,
                 submission,
+                config,
                 min(x1 + g_tol, x2 - g_tol),
                 max(x1 + g_tol, x2 - g_tol),
             )
@@ -259,21 +282,28 @@ def count(
 
 
 def monot_increasing(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    return check_monot_change(grader, submission, tool_dict, increasing=True)
+    return check_monot_change(grader, submission, config, tool_dict, increasing=True)
 
 
 def monot_decreasing(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    return check_monot_change(grader, submission, tool_dict, increasing=False)
+    return check_monot_change(grader, submission, config, tool_dict, increasing=False)
 
 
 # Function used for both monot increasing and decreasing
 def check_monot_change(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
     increasing: bool,
 ) -> tuple[float, int, list[str]]:
@@ -307,7 +337,7 @@ def check_monot_change(
 
         tool_used = tool_dict[toolid]["name"]
         if tool_used == "line-segment":
-            tool_grader = LineSegment.LineSegments(grader, submission, toolid)
+            tool_grader = LineSegment.LineSegments(grader, submission, config, toolid)
             if increasing:
                 correct = tool_grader.is_increasing_between(x1, x2)
             else:
@@ -317,7 +347,7 @@ def check_monot_change(
                 debug_message += tool_grader.debugger.get_message_as_list_and_clear()
         else:
             tool_grader = GradeableFunction.GradeableFunction(
-                grader, submission, toolid
+                grader, submission, config, toolid
             )
             if increasing:
                 correct = tool_grader.is_increasing_between(
@@ -339,21 +369,28 @@ def check_monot_change(
 
 
 def concave_up(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    return check_concavity(grader, submission, tool_dict, conc_up=True)
+    return check_concavity(grader, submission, config, tool_dict, conc_up=True)
 
 
 def concave_down(
-    grader: SketchGrader, submission: dict, tool_dict: dict[str, SketchTool]
+    grader: SketchGrader,
+    submission: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    return check_concavity(grader, submission, tool_dict, conc_up=False)
+    return check_concavity(grader, submission, config, tool_dict, conc_up=False)
 
 
 # Function used for both upward and downward concavity
 def check_concavity(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
     conc_up: bool,
 ) -> tuple[float, int, list[str]]:
@@ -384,7 +421,9 @@ def check_concavity(
         if correct:
             tool_used = tool_dict[toolid]["name"]
             if tool_used == "line-segment":
-                tool_grader = LineSegment.LineSegments(grader, submission, toolid)
+                tool_grader = LineSegment.LineSegments(
+                    grader, submission, config, toolid
+                )
                 segments = tool_grader.get_segments_between_strict(xmin=x1, xmax=x2)
                 if len(segments) > 0:
                     if debug:
@@ -395,7 +434,7 @@ def check_concavity(
                     break
             else:
                 tool_grader = GradeableFunction.GradeableFunction(
-                    grader, submission, toolid
+                    grader, submission, config, toolid
                 )
                 if tool_used == "polyline":
                     in_range = tool_grader.does_exist_between(x1, x2)
@@ -446,6 +485,7 @@ def check_concavity(
 def defined_in(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     feedback = (
@@ -477,15 +517,17 @@ def defined_in(
     for toolid in tools_to_check:
         tool_used = tool_dict[toolid]["name"]
         if tool_used == "polyline" and tool_dict[toolid]["closed"]:
-            tool_grader = Polygon.Polygons(grader, submission, toolid)
+            tool_grader = Polygon.Polygons(grader, submission, config, toolid)
         elif tool_used in gf_tools:
             tool_grader = GradeableFunction.GradeableFunction(
-                grader, submission, toolid
+                grader, submission, config, toolid
             )
         elif tool_used == "horizontal-line":
-            tool_grader = Asymptote.HorizontalAsymptotes(grader, submission, toolid)
+            tool_grader = Asymptote.HorizontalAsymptotes(
+                grader, submission, config, toolid
+            )
         elif tool_used == "line-segment":
-            tool_grader = LineSegment.LineSegments(grader, submission, toolid)
+            tool_grader = LineSegment.LineSegments(grader, submission, config, toolid)
         # add tool's range to all ranges
         if tool_grader:
             xrange += tool_grader.get_range_defined()
@@ -494,7 +536,7 @@ def defined_in(
         return 0, grader["weight"], [feedback]
 
     rd = tool_grader.collapse_ranges(xrange)
-    gap_length = get_gap_length_px(rd, x1, x2, submission)
+    gap_length = get_gap_length_px(rd, x1, x2, submission, config)
     correct = gap_length <= tolerance
     if debug:
         debug_message.extend((
@@ -512,6 +554,7 @@ def defined_in(
 def undefined_in(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     feedback = (
@@ -534,7 +577,7 @@ def undefined_in(
     debug_message = []
 
     coverage = get_coverage_length_px(
-        grader, submission, tools_to_check, tool_dict, x1, x2
+        grader, submission, config, tools_to_check, tool_dict, x1, x2
     )
     correct = coverage <= tolerance
     if not correct and debug:
@@ -550,23 +593,26 @@ def undefined_in(
 def greater_than(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    return check_ltgt(grader, submission, tool_dict, greater=True)
+    return check_ltgt(grader, submission, config, tool_dict, greater=True)
 
 
 def less_than(
     grader: SketchGrader,
     submission: dict,
     tool_dict: dict[str, SketchTool],
+    config: dict,
 ) -> tuple[float, int, list[str]]:
-    return check_ltgt(grader, submission, tool_dict, greater=False)
+    return check_ltgt(grader, submission, config, tool_dict, greater=False)
 
 
 # used for both less than and greater than y
 def check_ltgt(
     grader: SketchGrader,
     submission: dict,
+    config: dict,
     tool_dict: dict[str, SketchTool],
     greater: bool,
 ) -> tuple[float, int, list[str]]:
@@ -583,7 +629,7 @@ def check_ltgt(
 
     if grader["xyflip"]:
         grader["xrange"] = grader["yrange"]
-        submission = flip_grader_data(submission)
+        submission, config = flip_grader_data(submission, config)
 
     if grader["xrange"] is None or (grader["fun"] is None and grader["y"] is None):
         raise ValueError(
@@ -612,7 +658,7 @@ def check_ltgt(
         tool_grader = None
         if tool_used == "point":
             tool_grader = GradeableFunction.GradeableFunction(
-                grader, submission, toolid
+                grader, submission, config, toolid
             )
             if greater:
                 correct = (
@@ -630,14 +676,18 @@ def check_ltgt(
                 debug_message += tool_grader.debugger.get_message_as_list_and_clear()
         else:
             if tool_used == "line-segment":
-                tool_grader = LineSegment.LineSegments(grader, submission, toolid)
+                tool_grader = LineSegment.LineSegments(
+                    grader, submission, config, toolid
+                )
             elif tool_used == "horizontal-line":
-                tool_grader = Asymptote.HorizontalAsymptotes(grader, submission, toolid)
+                tool_grader = Asymptote.HorizontalAsymptotes(
+                    grader, submission, config, toolid
+                )
             elif tool_used == "polyline" and tool_dict[toolid]["closed"]:
-                tool_grader = Polygon.Polygons(grader, submission, toolid)
+                tool_grader = Polygon.Polygons(grader, submission, config, toolid)
             else:
                 tool_grader = GradeableFunction.GradeableFunction(
-                    grader, submission, toolid
+                    grader, submission, config, toolid
                 )
 
             if greater:

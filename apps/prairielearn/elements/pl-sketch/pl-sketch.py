@@ -13,7 +13,7 @@ from sketchresponse.types import (
     SketchGrader,
     SketchTool,
 )
-from sketchresponse.utils import format_initials, parse_function_string
+from sketchresponse.utils import format_drawing, parse_function_string
 
 WEIGHT_DEFAULT = 1
 XRANGE_DEFAULT = "-5,5"
@@ -43,14 +43,6 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
     name = pl.get_string_attrib(element, "answers-name")
     pl.check_answers_names(data, name)
-
-    # x-range check
-    x_range = split_range(
-        pl.get_string_attrib(element, "x-range", XRANGE_DEFAULT), None, None
-    )
-    y_range = split_range(
-        pl.get_string_attrib(element, "y-range", YRANGE_DEFAULT), None, None
-    )
 
     read_only = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
 
@@ -125,40 +117,31 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     if read_only:
         min_width = 240
 
-    width = pl.get_integer_attrib(element, "width", None)
-    if width is not None:
-        if width > 900:
-            raise ValueError(
-                "The width of the sketching canvas must be less than or equal to 900 pixels to avoid display issues."
-            )
-        if width < min_width:
-            raise ValueError(
-                "width must be at least "
-                + str(min_width)
-                + " pixels to avoid display issues. Note that this value is based on the number of tool icons in the toolbar."
-            )
-    else:
-        width = WIDTH_DEFAULT
+    width = pl.get_integer_attrib(element, "width", WIDTH_DEFAULT)
+    if width > 900:
+        raise ValueError(
+            "The width of the sketching canvas must be less than or equal to 900 pixels to avoid display issues."
+        )
+    if width < min_width:
+        raise ValueError(
+            "width must be at least "
+            + str(min_width)
+            + " pixels to avoid display issues. Note that this value is based on the number of tool icons in the toolbar."
+        )
     height = pl.get_integer_attrib(element, "height", HEIGHT_DEFAULT)
 
-    # Set up the canvas configuration based on attributes.
-    # Note that there's a 10-pixel margin added around the canvas for better usability when drawing close to the edges
-    xscale = (x_range[1] - x_range[0]) / (width - 20)
-    x_range[0] -= 10 * xscale
-    x_range[1] += 10 * xscale
+    x_range = split_range(
+        pl.get_string_attrib(element, "x-range", XRANGE_DEFAULT), None, None
+    )
+    y_range = split_range(
+        pl.get_string_attrib(element, "y-range", YRANGE_DEFAULT), None, None
+    )
 
-    yscale = (y_range[1] - y_range[0]) / (height - 20)
-    y_range[0] -= 10 * yscale
-    y_range[1] += 10 * yscale
+    ranges_config = prepare_ranges(x_range, y_range, width, height)
 
-    ranges_config: SketchCanvasSize = {
-        "x_start": x_range[0],
-        "x_end": x_range[1],
-        "y_start": y_range[0],
-        "y_end": y_range[1],
-        "width": width,
-        "height": height,
-    }
+    enforce_bounds = pl.get_boolean_attrib(
+        element, "enforce-bounds", ENFORCE_BOUNDS_DEFAULT
+    )
 
     # Validate and set graders, initial and solution values
     graders: list = []
@@ -179,27 +162,46 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     # Here we convert the data format into the client side representation that is grouped by tool
     initial_ids = {initial["toolid"] for initial in initials}
     initial_state = {
-        initial_id: format_initials(initials, tool_data[initial_id], ranges_config)
+        initial_id: format_drawing(initials, tool_data[initial_id], ranges_config)
         for initial_id in initial_ids
     }
 
     # Repeating the same process for solution data, which effectively becomes the initial state of the answer panel
     solution_ids = {solution["toolid"] for solution in solutions}
     solution_state = {
-        solution_id: format_initials(solutions, tool_data[solution_id], ranges_config)
+        solution_id: format_drawing(solutions, tool_data[solution_id], ranges_config)
         for solution_id in solution_ids
+    }
+
+    client_config = {
+        "width": ranges_config["width"],
+        "height": ranges_config["height"],
+        "xrange": [
+            ranges_config["x_start"],
+            ranges_config["x_end"],
+        ],
+        "yrange": [
+            ranges_config["y_start"],
+            ranges_config["y_end"],
+        ],
+        "xscale": "linear",
+        "yscale": "linear",
+        "enforceBounds": enforce_bounds,
+        "safetyBuffer": 10,
+        "coordinates": "cartesian",
+        "plugins": toolbar,
+        "initialstate": initial_state,
     }
 
     # Saving all processed data into a dictionary
     data["params"][name] = {
-        "sketch_config": {
-            "plugins": toolbar,
-            "tool_data": tool_data,
-            "initial_state": initial_state,
-            "solution_state": solution_state,
-            "ranges": ranges_config,
-            "graders": graders,
-        }
+        "plugins": toolbar,
+        "tool_data": tool_data,
+        "initial_state": initial_state,
+        "solution_state": solution_state,
+        "ranges": ranges_config,
+        "graders": graders,
+        "config": client_config,
     }
 
 
@@ -245,6 +247,30 @@ def split_range(
             f"Invalid range: {xrange}. Ranges must be ordered from low to high numbers and within the canvas bounds."
         )
     return result
+
+
+def prepare_ranges(
+    x_range: list[float], y_range: list[float], width: int, height: int
+) -> SketchCanvasSize:
+    """Set up a dictionary with the canvas ranges and dimensions."""
+    # Add 10 pixel margin around the canvas for better usability when drawing close to the edges
+    xscale = (x_range[1] - x_range[0]) / (width - 20)
+    x_range[0] -= 10 * xscale
+    x_range[1] += 10 * xscale
+
+    yscale = (y_range[1] - y_range[0]) / (height - 20)
+    y_range[0] -= 10 * yscale
+    y_range[1] += 10 * yscale
+
+    ranges_config: SketchCanvasSize = {
+        "x_start": x_range[0],
+        "x_end": x_range[1],
+        "y_start": y_range[0],
+        "y_end": y_range[1],
+        "width": width,
+        "height": height,
+    }
+    return ranges_config
 
 
 def check_tool(tool_tag: lxml.html.HtmlElement) -> SketchTool:
@@ -715,36 +741,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     element = lxml.html.fragment_fromstring(element_html)
     name = pl.get_string_attrib(element, "answers-name")
 
-    ranges = data["params"][name]["sketch_config"]["ranges"]
-    toolbar = data["params"][name]["sketch_config"]["plugins"]
-    initial = data["params"][name]["sketch_config"]["initial_state"]
-    solution = data["params"][name]["sketch_config"]["solution_state"]
+    config = data["params"][name]["config"]
+    solution = data["params"][name]["solution_state"]
 
-    enforce_bounds = pl.get_boolean_attrib(
-        element, "enforce-bounds", ENFORCE_BOUNDS_DEFAULT
-    )
-
-    config = {
-        "width": ranges["width"],
-        "height": ranges["height"],
-        "xrange": [
-            ranges["x_start"],
-            ranges["x_end"],
-        ],
-        "yrange": [
-            ranges["y_start"],
-            ranges["y_end"],
-        ],
-        "xscale": "linear",
-        "yscale": "linear",
-        "enforceBounds": enforce_bounds,
-        "safetyBuffer": 10,
-        "coordinates": "cartesian",
-        "plugins": toolbar,
-        "initialstate": initial,
-    }
-
-    submission = data["submitted_answers"].get(
+    submission = data["raw_submitted_answers"].get(
         name + "-sketchresponse-submission", None
     )
     if submission:
@@ -840,12 +840,14 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     if read_only:
         return
 
-    submission = data["submitted_answers"].get(
+    submission = data["raw_submitted_answers"].get(
         name + "-sketchresponse-submission", None
     )
     if submission:
         try:
             submission_parsed = json.loads(base64.b64decode(submission).decode("utf-8"))
+            gradeable = submission_parsed["gradeable"]
+            assert isinstance(gradeable, dict)
         except Exception:
             data["format_errors"][name] = "Invalid or corrupted submission data."
             return
@@ -854,7 +856,6 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
         return
 
     # The actual submission data is in this field
-    gradeable = submission_parsed["gradeable"]
 
     allow_blank = pl.get_boolean_attrib(element, "allow-blank", ALLOW_BLANK_DEFAULT)
     empty = True
@@ -874,19 +875,24 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # each grading criterion. Arguably, drawing a non-function when a function is requested is an incorrect answer
     # and does not need to be flagged as invalid.
     spline_based_tool_names = ["free-draw", "spline", "polyline"]
-    tool_data = data["params"][name]["sketch_config"]["tool_data"]
+    tool_data = data["params"][name]["tool_data"]
 
     # we don't want to check overlap if the graph is flipped for f(y) grading
     no_overlap_check = []
-    for grader in data["params"][name]["sketch_config"]["graders"]:
+    for grader in data["params"][name]["graders"]:
         if "xyflip" in grader and grader["xyflip"] is True:
             no_overlap_check += [tool["name"] for tool in grader["toolid"]]
 
     for toolid in gradeable:
+        if toolid not in tool_data or not isinstance(gradeable[toolid], list):
+            data["format_errors"][name] = (
+                f'Invalid data for tool "{toolid}" in submission.'
+            )
+            continue
         tool_type = tool_data[toolid]["name"]
         if tool_type == "polyline" and tool_data[toolid]["closed"]:
             for spline in gradeable[toolid]:
-                if (len(spline["spline"]) - 1) / 3 > 30:
+                if ("spline" in spline and len(spline["spline"]) - 1) / 3 > 30:
                     data["format_errors"][name] = (
                         "A drawn polygon/region exceeds the allowed number of vertices (max 30)."
                     )
@@ -930,7 +936,7 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
     if read_only:
         return
 
-    graders = data["params"][name]["sketch_config"]["graders"]
+    graders = data["params"][name]["graders"]
 
     if len(graders) == 0:
         data["partial_scores"][name] = {
@@ -947,7 +953,7 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
             sorted_graders[grader["stage"]] = [grader]
         else:
             sorted_graders[grader["stage"]].append(grader)
-    tools = data["params"][name]["sketch_config"]["plugins"][:]
+    tools = data["params"][name]["plugins"][:]
     tools.pop(0)
 
     debug = any(grader["debug"] for grader in graders)
@@ -1018,3 +1024,21 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
         "weight": weight,
         "feedback": feedback_out,
     }
+
+
+def test(element_html: str, data: pl.ElementTestData) -> None:
+    element = lxml.html.fragment_fromstring(element_html)
+    readonly = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
+    if readonly:
+        return
+
+    name = pl.get_string_attrib(element, "answers-name")
+
+    # TODO: Currently can only test invalid submissions since generating correct/incorrect ones for a given question configuration is
+    # non-trivial (and only possible at all if a valid solution in addition to the grading criteria is provided)
+    data["format_errors"][name] = "No graph has been submitted."
+    # Create submission without 'gradeable' field, which should trigger a format error
+    data["raw_submitted_answers"][name + "-sketchresponse-submission"] = (
+        base64.b64encode(json.dumps({}).encode("utf-8")).decode("utf-8")
+    )
+    return

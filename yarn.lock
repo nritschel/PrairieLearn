@@ -5008,7 +5008,7 @@ __metadata:
     "@prairielearn/sentry": "workspace:^"
     "@prairielearn/session": "workspace:^"
     "@prairielearn/signed-token": "workspace:^"
-    "@prairielearn/sketchresponse": "npm:^0.0.5"
+    "@prairielearn/sketchresponse": "npm:^0.0.6"
     "@prairielearn/tsconfig": "workspace:^"
     "@prairielearn/ui": "workspace:^"
     "@prairielearn/utils": "workspace:^"
@@ -5383,9 +5383,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@prairielearn/sketchresponse@npm:^0.0.5":
-  version: 0.0.5
-  resolution: "@prairielearn/sketchresponse@npm:0.0.5"
+"@prairielearn/sketchresponse@npm:^0.0.6":
+  version: 0.0.6
+  resolution: "@prairielearn/sketchresponse@npm:0.0.6"
   dependencies:
     buffer: "npm:^6.0.3"
     classnames: "npm:^2.5.1"
@@ -5400,7 +5400,7 @@ __metadata:
     sass-loader: "npm:^16.0.5"
     stylelint-scss: "npm:^6.12.0"
     sweetalert2: "npm:^11.22.0"
-  checksum: 10c0/f45f3a1b1a7a0ecbf989b2e79c147d48b3b369290c24811f15245f32998f86aac1c5937ce6155c810eb3e3ec6e9f9dfe23d5f021fca69d5ac657c230c3a55dfc
+  checksum: 10c0/19dbdbba1ddc39c1442fda79c3b81456468dfbeea10925f74f9b83c1c6dfaa9ccff6589eadf27ee128a8a87a8d73d4a8d604aa9bfd3af6ff6ba43efed6c31609
   languageName: node
   linkType: hard
 

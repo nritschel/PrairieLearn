@@ -602,8 +602,8 @@ def greater_than(
 def less_than(
     grader: SketchGrader,
     submission: dict,
-    tool_dict: dict[str, SketchTool],
     config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_ltgt(grader, submission, config, tool_dict, greater=False)
 

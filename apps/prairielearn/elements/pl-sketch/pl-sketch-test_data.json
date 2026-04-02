@@ -2,17 +2,16 @@
   "free-draw-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.5,
-            "y_end": 4.5,
-            "height": 450,
-            "x_start": -0.5,
-            "y_start": -4.5,
-            "coordinates": "cartesian"
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -45,15 +44,58 @@
               "readonly": false
             }
           ],
-          "tool_data": {
-            "fd": {
-              "name": "freeform",
-              "helper": null,
-              "readonly": null
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.5,
+          "y_end": 4.5,
+          "height": 450,
+          "x_start": -0.5,
+          "y_start": -4.5,
+          "coordinates": "cartesian"
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
+            },
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "fd",
+            "name": "freeform",
+            "color": "blue",
+            "label": "Function f(x)",
+            "limit": null,
+            "helper": false,
+            "readonly": false
+          }
+        ],
+        "tool_data": {
+          "fd": {
+            "name": "freeform",
+            "helper": null,
+            "readonly": null
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},
@@ -81,17 +123,16 @@
   "point-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.5,
-            "y_end": 4.5,
-            "height": 450,
-            "x_start": -0.5,
-            "y_start": -4.5,
-            "coordinates": "cartesian"
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -126,15 +167,60 @@
               "readonly": false
             }
           ],
-          "tool_data": {
-            "pt": {
-              "name": "point",
-              "helper": null,
-              "readonly": null
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.5,
+          "y_end": 4.5,
+          "height": 450,
+          "x_start": -0.5,
+          "y_start": -4.5,
+          "coordinates": "cartesian"
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
+            },
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "pt",
+            "name": "point",
+            "size": 15,
+            "color": "black",
+            "label": "Point",
+            "limit": null,
+            "helper": false,
+            "hollow": false,
+            "readonly": false
+          }
+        ],
+        "tool_data": {
+          "pt": {
+            "name": "point",
+            "helper": null,
+            "readonly": null
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},
@@ -162,17 +248,16 @@
   "polygon-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.5,
-            "y_end": 4.5,
-            "height": 450,
-            "x_start": -0.5,
-            "y_start": -4.5,
-            "coordinates": "cartesian"
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -209,16 +294,63 @@
               "fillColor": "mediumseagreen"
             }
           ],
-          "tool_data": {
-            "pg": {
-              "name": "polyline",
-              "closed": true,
-              "helper": null,
-              "readonly": null
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.5,
+          "y_end": 4.5,
+          "height": 450,
+          "x_start": -0.5,
+          "y_start": -4.5,
+          "coordinates": "cartesian"
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
+            },
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "pg",
+            "name": "polyline",
+            "color": "mediumseagreen",
+            "label": "Polygon",
+            "limit": null,
+            "closed": true,
+            "helper": false,
+            "opacity": null,
+            "readonly": false,
+            "dashStyle": null,
+            "fillColor": "mediumseagreen"
+          }
+        ],
+        "tool_data": {
+          "pg": {
+            "name": "polyline",
+            "closed": true,
+            "helper": null,
+            "readonly": null
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},
@@ -246,16 +378,16 @@
   "line-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.651923076923078,
-            "y_end": 4.709302325581396,
-            "height": 450,
-            "x_start": -0.5019230769230769,
-            "y_start": -4.709302325581396
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -310,22 +442,86 @@
               "directionConstraint": null
             }
           ],
-          "tool_data": {
-            "line": {
-              "name": "line-segment",
-              "group": null,
-              "helper": false,
-              "readonly": false
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.651923076923078,
+          "y_end": 4.709302325581396,
+          "height": 450,
+          "x_start": -0.5019230769230769,
+          "y_start": -4.709302325581396
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
             },
-            "line-v": {
-              "name": "line-segment",
-              "group": null,
-              "helper": false,
-              "readonly": false
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "line",
+            "name": "line-segment",
+            "color": "red",
+            "group": null,
+            "label": "Line",
+            "limit": null,
+            "helper": false,
+            "readonly": false,
+            "arrowHead": null,
+            "dashStyle": "solid",
+            "lengthConstraint": null,
+            "directionConstraint": null
+          },
+          {
+            "id": "line-v",
+            "name": "line-segment",
+            "color": "purple",
+            "group": null,
+            "label": "Line",
+            "limit": null,
+            "helper": false,
+            "readonly": false,
+            "arrowHead": {
+              "base": 6,
+              "length": 10
+            },
+            "dashStyle": "solid",
+            "lengthConstraint": null,
+            "directionConstraint": null
+          }
+        ],
+        "tool_data": {
+          "line": {
+            "name": "line-segment",
+            "group": null,
+            "helper": false,
+            "readonly": false
+          },
+          "line-v": {
+            "name": "line-segment",
+            "group": null,
+            "helper": false,
+            "readonly": false
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},
@@ -353,17 +549,16 @@
   "horizontal-line-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.5,
-            "y_end": 4.5,
-            "height": 450,
-            "x_start": -0.5,
-            "y_start": -4.5,
-            "coordinates": "cartesian"
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -397,15 +592,59 @@
               "dashStyle": "dashdotted"
             }
           ],
-          "tool_data": {
-            "hl": {
-              "name": "horizontal-line",
-              "helper": null,
-              "readonly": null
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.5,
+          "y_end": 4.5,
+          "height": 450,
+          "x_start": -0.5,
+          "y_start": -4.5,
+          "coordinates": "cartesian"
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
+            },
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "hl",
+            "name": "horizontal-line",
+            "color": "dimgray",
+            "label": "Horizontal Line",
+            "limit": null,
+            "helper": false,
+            "readonly": false,
+            "dashStyle": "dashdotted"
+          }
+        ],
+        "tool_data": {
+          "hl": {
+            "name": "horizontal-line",
+            "helper": null,
+            "readonly": null
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},
@@ -433,17 +672,16 @@
   "vertical-line-tool": {
     "params": {
       "test": {
-        "sketch_config": {
-          "ranges": {
-            "width": 800,
-            "x_end": 11.5,
-            "y_end": 4.5,
-            "height": 450,
-            "x_start": -0.5,
-            "y_start": -4.5,
-            "coordinates": "cartesian"
-          },
-          "graders": [],
+        "config": {
+          "width": 800,
+          "height": 450,
+          "xrange": [-0.5, 11.5],
+          "yrange": [-4.5, 4.5],
+          "xscale": "linear",
+          "yscale": "linear",
+          "enforceBounds": false,
+          "safetyBuffer": 10,
+          "coordinates": "cartesian",
           "plugins": [
             {
               "name": "axes",
@@ -477,15 +715,59 @@
               "dashStyle": "dashdotted"
             }
           ],
-          "tool_data": {
-            "vl": {
-              "name": "vertical-line",
-              "helper": null,
-              "readonly": null
+          "initialstate": {}
+        },
+        "ranges": {
+          "width": 800,
+          "x_end": 11.5,
+          "y_end": 4.5,
+          "height": 450,
+          "x_start": -0.5,
+          "y_start": -4.5,
+          "coordinates": "cartesian"
+        },
+        "graders": [],
+        "plugins": [
+          {
+            "name": "axes",
+            "colors": {
+              "xaxisLabel": "blue",
+              "yaxisLabel": "blue"
+            },
+            "fontSize": {
+              "xaxisLabel": 14,
+              "yaxisLabel": 14
+            },
+            "xaxisLabel": {
+              "dx": 10,
+              "dy": 10,
+              "value": "x"
+            },
+            "yaxisLabel": {
+              "dx": 10,
+              "dy": 20,
+              "value": "y"
             }
           },
-          "initial_state": {}
-        }
+          {
+            "id": "vl",
+            "name": "vertical-line",
+            "color": "dimgray",
+            "label": "Vertical Line",
+            "limit": null,
+            "helper": false,
+            "readonly": false,
+            "dashStyle": "dashdotted"
+          }
+        ],
+        "tool_data": {
+          "vl": {
+            "name": "vertical-line",
+            "helper": null,
+            "readonly": null
+          }
+        },
+        "initial_state": {}
       }
     },
     "correct_answers": {},

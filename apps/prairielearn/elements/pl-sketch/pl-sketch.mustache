@@ -40,10 +40,10 @@
   {{/format_error}}
   {{/read_only}}
     <div class="sketchresponse">
-      <!-- Base64-encoded config data for SketchResponse below -->
+      {{! Base64-encoded config data for SketchResponse }}
       <div id="{{id}}-sketchresponse-data" style="display:none">{{config}}</div>
-      <!-- Base64-encoded submission data (for saving/grading) for SketchResponse below -->
-      <input type="hidden" id="{{id}}-sketchresponse-submission" name="{{id}}-sketchresponse-submission"></input>
+      {{! Base64-encoded submission data for SketchResponse (set by the client) }}
+      <input type="hidden" id="{{id}}-sketchresponse-submission" name="{{id}}-sketchresponse-submission" />
       <div id="{{id}}-si-container" class="si-container" tabindex="0">
         Loading SketchInput canvas...
       </div>

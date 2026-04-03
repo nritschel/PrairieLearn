@@ -15,17 +15,23 @@ from sketchresponse.utils import (
 )
 
 
-def grade_submission(
-    grader: SketchGrader, data: pl.QuestionData, name: str
+def grade_answer(
+    grader: SketchGrader,
+    submitted_answer: dict,
+    config: dict,
+    tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    submission = data["submitted_answers"][name + "-sketchresponse-submission"]
-    if submission is None:
-        raise ValueError("Cannot grade empty submission")
+    """Grade a single answer against a grading criterion.
 
-    submitted_answer = json.loads(base64.b64decode(submission).decode("utf-8"))
-    config = data["params"][name]["config"]
-    tool_dict = data["params"][name]["tool_data"]
+    Unlike grade_submission, this takes the decoded submission dict directly
+    rather than reading from the data dict.
 
+    Returns:
+        A tuple of (score, weight, feedback).
+
+    Raises:
+        ValueError: If the grader type is unknown.
+    """
     match grader["type"]:
         case "match":
             return match(grader, submitted_answer, config, tool_dict)
@@ -51,6 +57,20 @@ def grade_submission(
             return less_than(grader, submitted_answer, config, tool_dict)
         case _:
             raise ValueError(f"Unknown grader type: {grader['type']}")
+
+
+def grade_submission(
+    grader: SketchGrader, data: pl.QuestionData, name: str
+) -> tuple[float, int, list[str]]:
+    submission = data["submitted_answers"][name + "-sketchresponse-submission"]
+    if submission is None:
+        raise ValueError("Cannot grade empty submission")
+
+    submitted_answer = json.loads(base64.b64decode(submission).decode("utf-8"))
+    config = data["params"][name]["config"]
+    tool_dict = data["params"][name]["tool_data"]
+
+    return grade_answer(grader, submitted_answer, config, tool_dict)
 
 
 def match(

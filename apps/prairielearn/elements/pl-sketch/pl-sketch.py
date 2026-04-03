@@ -1,4 +1,5 @@
 import base64
+import copy
 import json
 import random
 import string
@@ -6,7 +7,8 @@ import string
 import chevron
 import lxml.html
 import prairielearn as pl
-from pl_sketch_grading import grade_submission
+from pl_sketch_grading import grade_answer, grade_submission
+from prairielearn.question_utils import PartialScore
 from sketchresponse.types import (
     SketchCanvasSize,
     SketchDrawing,
@@ -1026,6 +1028,195 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
     }
 
 
+def _solution_to_gradeable(
+    solution_state: dict,
+    tool_data: dict[str, SketchTool],
+    config: dict,
+) -> dict:
+    """Convert solution_state (rendering format) to gradeable submission format."""
+    gradeable: dict = {}
+    w = config["width"]
+    h = config["height"]
+
+    for tool_id, drawings in solution_state.items():
+        tool_name = tool_data[tool_id]["name"]
+
+        if tool_name in ("spline", "freeform", "polyline"):
+            # Each inner list is one curve: [{"x": x, "y": y}, ...]
+            gradeable[tool_id] = [
+                {"spline": [[pt["x"], pt["y"]] for pt in curve]} for curve in drawings
+            ]
+
+        elif tool_name == "point":
+            # Flat list of {"x": x, "y": y} dicts
+            gradeable[tool_id] = [{"point": [pt["x"], pt["y"]]} for pt in drawings]
+
+        elif tool_name == "line-segment":
+            # Flat list of {"x": x, "y": y} dicts, taken in pairs
+            segments = []
+            for i in range(0, len(drawings), 2):
+                p1 = [drawings[i]["x"], drawings[i]["y"]]
+                p2 = [drawings[i + 1]["x"], drawings[i + 1]["y"]]
+                ctrl1 = [
+                    p1[0] + (p2[0] - p1[0]) / 3,
+                    p1[1] + (p2[1] - p1[1]) / 3,
+                ]
+                ctrl2 = [
+                    p1[0] + 2 * (p2[0] - p1[0]) / 3,
+                    p1[1] + 2 * (p2[1] - p1[1]) / 3,
+                ]
+                segments.append({"spline": [p1, ctrl1, ctrl2, p2]})
+            gradeable[tool_id] = segments
+
+        elif tool_name == "horizontal-line":
+            # [{"y": val}, ...]
+            gradeable[tool_id] = [
+                {
+                    "spline": [
+                        [0, d["y"]],
+                        [w / 3, d["y"]],
+                        [2 * w / 3, d["y"]],
+                        [w, d["y"]],
+                    ]
+                }
+                for d in drawings
+            ]
+
+        elif tool_name == "vertical-line":
+            # [{"x": val}, ...]
+            gradeable[tool_id] = [
+                {
+                    "spline": [
+                        [d["x"], 0],
+                        [d["x"], h / 3],
+                        [d["x"], 2 * h / 3],
+                        [d["x"], h],
+                    ]
+                }
+                for d in drawings
+            ]
+
+    # Fill empty lists for tools not in solution
+    for tid in tool_data:
+        if tid not in gradeable:
+            gradeable[tid] = []
+
+    return gradeable
+
+
+def _mutate_gradeable(gradeable: dict, offset: float = 200) -> dict:
+    """Mutate gradeable data to produce an incorrect submission.
+
+    Applies two transformations to break as many grader types as possible:
+    1. Reverses point order within each spline (breaks monotonicity, concavity)
+    2. Shifts all y-coordinates (breaks absolute position checks like match,
+       match-function, greater-than, less-than)
+
+    Graders that check structural properties (defined-in, undefined-in, count)
+    may still pass; the caller uses _compute_expected_grade to handle this.
+
+    Returns:
+        A mutated copy of the gradeable data.
+    """
+    mutated = copy.deepcopy(gradeable)
+    for items in mutated.values():
+        for item in items:
+            if "spline" in item:
+                item["spline"] = [[x, y + offset] for x, y in reversed(item["spline"])]
+            if "point" in item:
+                item["point"] = [item["point"][0], item["point"][1] + offset]
+    return mutated
+
+
+def _encode_submission(gradeable: dict) -> str:
+    """Encode gradeable data as a base64 submission."""
+    return base64.b64encode(
+        json.dumps({"gradeable": gradeable}).encode("utf-8")
+    ).decode("utf-8")
+
+
+def _compute_expected_grade(
+    gradeable: dict,
+    graders: list[SketchGrader],
+    config: dict,
+    tool_data: dict[str, SketchTool],
+    element_weight: int,
+) -> PartialScore | None:
+    """Compute expected partial_scores by replicating grade()'s scoring logic."""
+    if len(graders) == 0:
+        return {
+            "score": 1,
+            "weight": element_weight,
+            "feedback": [{"correct": True, "fb": "Correct!"}],
+        }
+
+    submitted_answer = {"gradeable": gradeable}
+
+    sorted_graders = sorted(graders, key=lambda g: g["stage"])
+    staged: dict[int, list[SketchGrader]] = {}
+    for g in sorted_graders:
+        staged.setdefault(g["stage"], []).append(g)
+
+    debug_any = any(g["debug"] for g in graders)
+
+    scores: list[int] = []
+    weights: list[int] = []
+    all_feedback: list[str] = []
+    debug_messages: list[list[str]] = []
+
+    prev_stage_correct = True
+    for stage in sorted(staged.keys()):
+        ignore_score = not prev_stage_correct
+        for grader in staged[stage]:
+            score, w, feedback = grade_answer(
+                grader, submitted_answer, config, tool_data
+            )
+            weights.append(w)
+            if score == 1:
+                scores.append(1 if not ignore_score else 0)
+            else:
+                scores.append(0)
+                all_feedback.append(feedback[0])
+                if debug_any:
+                    debug_messages.append(feedback)
+                if stage != 0:
+                    prev_stage_correct = False
+
+    total_weights = sum(weights)
+    if total_weights == 0:
+        return None
+
+    percentage = 1 / total_weights
+    final_score = round(
+        sum(scores[i] * percentage * weights[i] for i in range(len(scores))), 2
+    )
+
+    feedback_out: list[dict] = []
+    if len(all_feedback) == 0:
+        feedback_out.append({"correct": True, "fb": "Correct!"})
+    elif not debug_any:
+        feedback_out.extend(
+            {"correct": False, "fb": fb} for fb in all_feedback if fb != ""
+        )
+    else:
+        feedback_out.extend(
+            {
+                "correct": False,
+                "fb": d[0],
+                "debug_mode": len(d) > 1,
+                "debug": [{"message": m} for m in d[1:]],
+            }
+            for d in debug_messages
+            if d[0] != ""
+        )
+
+    return {
+        "score": final_score,
+        "weight": element_weight,
+        "feedback": feedback_out,
+    }
+
+
 def test(element_html: str, data: pl.ElementTestData) -> None:
     element = lxml.html.fragment_fromstring(element_html)
     readonly = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
@@ -1033,12 +1224,45 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
         return
 
     name = pl.get_string_attrib(element, "answers-name")
+    key = name + "-sketchresponse-submission"
+    weight = pl.get_integer_attrib(element, "weight", WEIGHT_DEFAULT)
+    result = data["test_type"]
 
-    # TODO: Currently can only test invalid submissions since generating correct/incorrect ones for a given question configuration is
-    # non-trivial (and only possible at all if a valid solution in addition to the grading criteria is provided)
-    data["format_errors"][name] = "No graph has been submitted."
-    # Create submission without 'gradeable' field, which should trigger a format error
-    data["raw_submitted_answers"][name + "-sketchresponse-submission"] = (
-        base64.b64encode(json.dumps({}).encode("utf-8")).decode("utf-8")
-    )
-    return
+    if result == "invalid":
+        data["format_errors"][name] = "No graph has been submitted."
+        data["raw_submitted_answers"][key] = base64.b64encode(
+            json.dumps({}).encode("utf-8")
+        ).decode("utf-8")
+        return
+
+    solution_state = data["params"][name]["solution_state"]
+
+    if not solution_state:
+        # No solution defined; can't generate correct/incorrect submissions
+        data["format_errors"][name] = "No graph has been submitted."
+        data["raw_submitted_answers"][key] = base64.b64encode(
+            json.dumps({}).encode("utf-8")
+        ).decode("utf-8")
+        return
+
+    tool_data = data["params"][name]["tool_data"]
+    config = data["params"][name]["config"]
+    graders = data["params"][name]["graders"]
+
+    gradeable = _solution_to_gradeable(solution_state, tool_data, config)
+
+    if result == "correct":
+        data["raw_submitted_answers"][key] = _encode_submission(gradeable)
+        data["partial_scores"][name] = {
+            "score": 1,
+            "weight": weight,
+            "feedback": [{"correct": True, "fb": "Correct!"}],
+        }
+
+    elif result == "incorrect":
+        mutated = _mutate_gradeable(gradeable)
+        data["raw_submitted_answers"][key] = _encode_submission(mutated)
+        expected = _compute_expected_grade(mutated, graders, config, tool_data, weight)
+        if expected is None:
+            return
+        data["partial_scores"][name] = expected

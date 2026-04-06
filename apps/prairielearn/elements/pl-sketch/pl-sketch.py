@@ -1063,15 +1063,20 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
         # Try to produce a submission based on the solution that is incorrect
         gradeable = _mutate_gradeable(gradeable)
 
-    encoded_gradeable = base64.b64encode(
+    data["raw_submitted_answers"][key] = base64.b64encode(
         json.dumps({"gradeable": gradeable}).encode("utf-8")
-    )
-    data["raw_submitted_answers"][key] = encoded_gradeable
-    data["submitted_answers"][key] = encoded_gradeable
+    ).decode("utf-8")
+
+    # Setting submitted_answers because it is needed for invoking grading below
+    data.setdefault("submitted_answers", {})[key] = data["raw_submitted_answers"][key]
 
     # Determine expected grading result by actually running the graders
     # Note that depending on the grading criteria and provided solution, it is both possible that the incorrect
     # submission gets some (or all) points, and that the supposedly correct solution gets less than full points
+    data["partial_scores"][name] = _grade_with_staging(name, data, weight)
+
+    # Removing submitted_answers since we are not actually allowed to set it in test()
+    data.pop("submitted_answers")
 
 
 def _solution_to_gradeable(
@@ -1086,34 +1091,33 @@ def _solution_to_gradeable(
     for tool_id, drawings in solution_state.items():
         tool_name = tool_data[tool_id]["name"]
 
-        if tool_name in ("spline", "freeform", "polyline"):
-            # Each inner list is one curve: [{"x": x, "y": y}, ...]
-            gradeable[tool_id] = [
-                {"spline": [[pt["x"], pt["y"]] for pt in curve]} for curve in drawings
-            ]
-
-        elif tool_name == "point":
-            # Flat list of {"x": x, "y": y} dicts
+        if tool_name == "point":
+            # Easy case: just need to convert from {"x": x, "y": y} dict to [x, y] list
             gradeable[tool_id] = [{"point": [pt["x"], pt["y"]]} for pt in drawings]
 
-        elif tool_name == "line-segment":
-            # Flat list of {"x": x, "y": y} dicts, taken in pairs
-            segments = []
-            for i in range(0, len(drawings), 2):
-                p1 = [drawings[i]["x"], drawings[i]["y"]]
-                p2 = [drawings[i + 1]["x"], drawings[i + 1]["y"]]
-                ctrl1 = [
-                    p1[0] + (p2[0] - p1[0]) / 3,
-                    p1[1] + (p2[1] - p1[1]) / 3,
-                ]
-                ctrl2 = [
-                    p1[0] + 2 * (p2[0] - p1[0]) / 3,
-                    p1[1] + 2 * (p2[1] - p1[1]) / 3,
-                ]
-                segments.append({"spline": [p1, ctrl1, ctrl2, p2]})
-            gradeable[tool_id] = segments
+        elif tool_name in ("spline", "freeform", "polyline", "line-segment"):
+            # To convert points into the spline format, we need to add control points in-between each point pair.
+            # Note that line-segment is a special case where len(curve) is exactly 2, but the logic works the same
+            gradeable[tool_id] = []
+            for curve in drawings:
+                pts = []
+                for i in range(len(curve) - 1):
+                    p1 = [curve[i]["x"], curve[i]["y"]]
+                    p2 = [curve[i + 1]["x"], curve[i + 1]["y"]]
+                    ctrl1 = [
+                        p1[0] + (p2[0] - p1[0]) / 3,
+                        p1[1] + (p2[1] - p1[1]) / 3,
+                    ]
+                    ctrl2 = [
+                        p1[0] + 2 * (p2[0] - p1[0]) / 3,
+                        p1[1] + 2 * (p2[1] - p1[1]) / 3,
+                    ]
+                    pts += [p1, ctrl1, ctrl2]
+                pts.append([curve[-1]["x"], curve[-1]["y"]])
+                gradeable[tool_id].append({"spline": pts})
 
         elif tool_name == "horizontal-line":
+            # For horizontal lines, we replace the arbitrary y-value with a spline that spans the canvas
             gradeable[tool_id] = [
                 {
                     "spline": [
@@ -1127,6 +1131,7 @@ def _solution_to_gradeable(
             ]
 
         elif tool_name == "vertical-line":
+            # For vertical lines, we replace the arbitrary x-value with a spline that spans the canvas
             gradeable[tool_id] = [
                 {
                     "spline": [

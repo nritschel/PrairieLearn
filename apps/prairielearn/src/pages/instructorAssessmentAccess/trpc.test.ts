@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { AccessControlJsonInputSchema } from './trpc.js';
+import { AccessControlJsonInputSchema } from '../../trpc/assessment/access-control.js';
 
 describe('AccessControlJsonInputSchema', () => {
   it('accepts explicit nulls used to clear inherited override fields', () => {
@@ -14,12 +14,10 @@ describe('AccessControlJsonInputSchema', () => {
         durationMinutes: null,
         password: null,
       },
-      listBeforeRelease: null,
     });
 
     expect(result.dateControl?.releaseDate).toBeNull();
     expect(result.dateControl?.afterLastDeadline).toBeNull();
     expect(result.dateControl?.durationMinutes).toBeNull();
-    expect(result.listBeforeRelease).toBeNull();
   });
 });

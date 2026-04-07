@@ -1,20 +1,22 @@
-import { QueryClient, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { Alert } from 'react-bootstrap';
 
+import { type AppError, getAppError } from '../../../lib/client/errors.js';
 import type { PageContext } from '../../../lib/client/page-context.js';
 import { QueryClientProviderDebug } from '../../../lib/client/tanstackQuery.js';
-import { getAssessmentAccessUrl } from '../../../lib/client/url.js';
-import { createAccessControlTrpcClient } from '../utils/trpc-client.js';
-import { TRPCProvider, useTRPCClient } from '../utils/trpc-context.js';
+import { getCourseInstanceJobSequenceUrl } from '../../../lib/client/url.js';
+import type { AccessControlJsonWithId } from '../../../models/assessment-access-control-rules.js';
+import type { AccessControlError } from '../../../trpc/assessment/access-control.js';
+import { createAssessmentTrpcClient } from '../../../trpc/assessment/client.js';
+import { TRPCProvider, useTRPC } from '../../../trpc/assessment/context.js';
 
 import { AccessControlForm } from './AccessControlForm.js';
-import type { AccessControlJsonWithId } from './types.js';
 
 interface AssessmentAccessControlProps {
   courseInstance: PageContext<'courseInstance', 'instructor'>['course_instance'];
   csrfToken: string;
-  origHash: string;
+  origHash: string | null;
   assessmentId: string;
   initialData: AccessControlJsonWithId[];
 }
@@ -25,74 +27,99 @@ function AssessmentAccessControlInner({
   initialData,
 }: AssessmentAccessControlProps) {
   const [origHash, setOrigHash] = useState(initialOrigHash);
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const trpcClient = useTRPCClient();
+  const trpc = useTRPC();
 
-  const handleFormSubmit = async (data: AccessControlJsonWithId[]) => {
-    setShowSuccess(false);
-    setSaveError(null);
-    setIsSaving(true);
+  const saveMutation = useMutation(
+    trpc.accessControl.saveAllRules.mutationOptions({
+      onSuccess: (result) => {
+        setOrigHash(result.newHash);
+        void queryClient.invalidateQueries();
+      },
+    }),
+  );
 
+  const handleFormSubmit = (data: AccessControlJsonWithId[]) => {
     const jsonRules = data.filter((r) => r.ruleType !== 'enrollment');
     const enrollmentRules = data
       .filter((r) => r.ruleType === 'enrollment')
-      .map(({ ruleType: _, individuals, ...ruleJson }) => ({
+      .map(({ ruleType: _, enrollments, ...ruleJson }) => ({
         id: ruleJson.id,
-        enrollmentIds: (individuals ?? []).map((i) => i.enrollmentId),
+        enrollmentIds: (enrollments ?? []).map((e) => e.enrollmentId),
         ruleJson,
       }));
 
-    try {
-      const result = await trpcClient.saveAllRules.mutate({
-        rules: jsonRules,
-        enrollmentRules,
-        origHash,
-      });
-      setOrigHash(result.newHash);
-      setShowSuccess(true);
-      void queryClient.invalidateQueries();
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save access control');
-    } finally {
-      setIsSaving(false);
-    }
+    saveMutation.mutate({
+      rules: jsonRules,
+      enrollmentRules,
+      origHash,
+    });
   };
+
+  const saveError = getAppError<AccessControlError['SaveAllRules']>(saveMutation.error);
+
+  const alert = saveMutation.isSuccess ? (
+    <Alert variant="success" dismissible onClose={() => saveMutation.reset()}>
+      Access control updated successfully.
+    </Alert>
+  ) : saveError ? (
+    <SaveErrorAlert
+      appError={saveError}
+      courseInstanceId={courseInstance.id}
+      onDismiss={() => saveMutation.reset()}
+    />
+  ) : null;
 
   return (
     <div style={{ height: '100%' }} data-split-pane-page>
-      {showSuccess && (
-        <Alert variant="success" dismissible onClose={() => setShowSuccess(false)}>
-          Access control updated successfully.
-        </Alert>
-      )}
-      {saveError && (
-        <Alert variant="danger" dismissible onClose={() => setSaveError(null)}>
-          {saveError}
-        </Alert>
-      )}
-
       <AccessControlForm
         courseInstance={courseInstance}
         initialData={initialData}
-        isSaving={isSaving}
+        isSaving={saveMutation.isPending}
+        alert={alert}
         onSubmit={handleFormSubmit}
       />
     </div>
   );
 }
 
+function SaveErrorAlert({
+  appError,
+  courseInstanceId,
+  onDismiss,
+}: {
+  appError: AppError<AccessControlError['SaveAllRules']>;
+  courseInstanceId: string;
+  onDismiss: () => void;
+}) {
+  switch (appError.code) {
+    case 'SYNC_JOB_FAILED':
+      return (
+        <Alert variant="danger" dismissible onClose={onDismiss}>
+          {appError.message}{' '}
+          <a href={getCourseInstanceJobSequenceUrl(courseInstanceId, appError.jobSequenceId)}>
+            View job logs
+          </a>
+        </Alert>
+      );
+    case 'UNKNOWN':
+      return (
+        <Alert variant="danger" dismissible onClose={onDismiss}>
+          {appError.message}
+        </Alert>
+      );
+  }
+}
+
 export function AssessmentAccessControl(props: AssessmentAccessControlProps) {
   const [queryClient] = useState(() => new QueryClient());
-  const [trpcClient] = useState(() => {
-    const accessUrl = getAssessmentAccessUrl({
+  const [trpcClient] = useState(() =>
+    createAssessmentTrpcClient({
+      csrfToken: props.csrfToken,
       courseInstanceId: props.courseInstance.id,
       assessmentId: props.assessmentId,
-    });
-    return createAccessControlTrpcClient(props.csrfToken, `${accessUrl}/trpc`);
-  });
+    }),
+  );
   return (
     <QueryClientProviderDebug client={queryClient}>
       <TRPCProvider trpcClient={trpcClient} queryClient={queryClient}>

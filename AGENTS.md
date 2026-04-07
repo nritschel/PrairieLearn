@@ -41,6 +41,7 @@ Frequently used packages:
 - NEVER rebase unless specifically requested, always use merge commits.
 - ALWAYS create pull requests as drafts unless specifically requested.
 - When creating pull requests, follow the PR template in `.github/PULL_REQUEST_TEMPLATE.md`.
+- In Claude Code remote sessions, if the target branch is not `master`, commit and push directly to the parent/target branch instead of creating a separate feature branch.
 
 ## Building, type checking, and linting
 
@@ -118,12 +119,13 @@ When working with assessment "groups" / "teams", see the [`groups-and-teams` ski
 
 - Use `to_jsonb(table.*)` if you need to select all columns from a table as JSON. This is preferred over explicit `jsonb_build_object` calls because it automatically includes all columns and stays in sync with schema changes.
 - When writing SQL, get table and column names from `database/tables/` (the source of truth) or from nearby existing queries in the same feature area. Do NOT rely on names found in old migrations, as tables and columns may have been renamed since those migrations were written.
+- Never inline SQL strings in TypeScript code. Place SQL queries in a `.sql` file alongside the TypeScript file using `-- BLOCK query_name` delimiters, load them with `sqldb.loadSqlEquiv(import.meta.url)`, and reference them as `sql.query_name`.
 
 ## TypeScript guidance
 
 ### Library usage conventions
 
-- Use `tRPC + @trpc/tanstack-react-query` for new client/server communication. When interacting with existing REST APIs, use `@tanstack/react-query`.
+- Use `tRPC + @trpc/tanstack-react-query` for new client/server communication. When interacting with existing REST APIs, use `@tanstack/react-query`. See the [`trpc` skill](./.agents/skills/trpc/SKILL.md) for conventions on authorization scopes, file structure, and client-side patterns.
 - Use `react-hook-form` for form handling.
 - Prefer `extractPageContext(res.locals, ...)` over accessing `res.locals` properties directly in route handlers. This provides better type safety and ensures consistent access patterns.
 - Use `nuqs` for URL query state in hydrated components. Use `NuqsAdapter` from `@prairielearn/ui` and pass the search string from the router. See `pages/home/` for an example.
@@ -141,7 +143,8 @@ When working with assessment "groups" / "teams", see the [`groups-and-teams` ski
 
 ### User interface conventions
 
-- Use `react-bootstrap` components for UI elements.
+- Look for existing shared UI components in `apps/prairielearn/src/components/` or `@prairielearn/ui` before building new ones. When the same UI pattern appears across multiple pages, extract it into a shared component rather than duplicating code.
+- For basic UI elements that have a dedicated Bootstrap component, use `react-bootstrap` components. For more complex / interactive UI elements, use `react-aria`.
 - Titles and buttons should use sentence case ("Save course", "Discard these changes").
 - Form inputs with validation errors should include `aria-invalid` and `aria-errormessage` attributes pointing to the error message element's `id`.
 - Prefer using [Bootstrap Icons](https://icons.getbootstrap.com/) for icons in new code.
@@ -184,10 +187,11 @@ Inline `PageLayout` directly in the Express route handler rather than creating w
 
 - A file at `./foo.tsx` should be imported as `./foo.js` from other files.
 - Use `clsx` in React components.
-- Inline prop definitions for components if they are not used outside of the component.
+- Define component props directly in the function signature (e.g., `function Foo({ a, b }: { a: string; b: number })`) instead of declaring a separate named interface. Exception: if the props type is used by multiple components or exported, a named interface is fine.
 - Pass `res.locals` to `getPageContext` to get information about the course instance / authentication state.
 - If you hydrate a component with `Hydrate`, you must register the component with `registerHydratedComponent` in a file in `apps/prairielearn/assets/scripts/esm-bundles/hydrated-components`.
 - Don't use `useMemo` for cheap computations. Use `run` from `@prairielearn/run` instead (an IIFE helper that executes a function immediately).
+- Don't use `useEffect` to sync internal state to a parent via a callback on every change — instead, let the child own its state and notify the parent imperatively when a user action requires it (e.g., clicking "Save").
 - Avoid unnecessary `useEffect` when using `react-hook-form`. The `watch()` function returns reactive values that trigger re-renders automatically, so derived state can be computed directly without `useEffect`.
 - In hydrated components using `react-hook-form`, always add `defaultValue` (text inputs, textareas, selects) or `defaultChecked` (checkboxes) alongside `{...register(...)}`. Without these, values aren't populated until client hydration, causing a flash of empty fields.
 

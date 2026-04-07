@@ -146,6 +146,7 @@ export const SprocAuthzAssessmentSchema = z.object({
   mode: EnumModeSchema.nullable(),
   next_active_time: z.string().nullable(),
   password: z.string().nullable(),
+  show_before_release: z.boolean(),
   show_closed_assessment: z.boolean(),
   show_closed_assessment_score: z.boolean(),
   time_limit_min: z.number().nullable(),
@@ -163,6 +164,7 @@ export const SprocAuthzAssessmentInstanceSchema = z.object({
   mode: EnumModeSchema.nullable(),
   next_active_time: z.string().nullable(),
   password: z.string().nullable(),
+  show_before_release: z.boolean(),
   show_closed_assessment: z.boolean(),
   show_closed_assessment_score: z.boolean(),
   time_limit_expired: z.boolean(),
@@ -242,8 +244,8 @@ export const AssessmentAccessControlRuleSchema = z.object({
   list_before_release: z.boolean().nullable(),
   number: z.number(),
 
-  // Target type: 'none' for main rule (applies to all), 'enrollment' for individual students, 'student_label' for labels
-  target_type: z.enum(['none', 'enrollment', 'student_label']),
+  // Target type: 'none' for main rule (applies to all), 'student_label' for labels, 'enrollment' for individual students
+  target_type: z.enum(['none', 'student_label', 'enrollment']),
 });
 export type AssessmentAccessControlRule = z.infer<typeof AssessmentAccessControlRuleSchema>;
 
@@ -377,6 +379,10 @@ export const AlternativeGroupSchema = z.object({
   zone_id: IdSchema,
 });
 export type AlternativeGroup = z.infer<typeof AlternativeGroupSchema>;
+
+// The DB table is still "alternative_groups"; this alias lets the codebase use "pool" terminology.
+export const AlternativePoolSchema = AlternativeGroupSchema;
+export type AlternativePool = AlternativeGroup;
 
 export const AssessmentScoreLogSchema = null;
 export const AssessmentStateLogSchema = null;

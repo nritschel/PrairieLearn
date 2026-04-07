@@ -4,6 +4,7 @@ import { AccessControlJsonSchema } from './accessControl.js';
 import { CommentJsonSchema } from './comment.js';
 
 export const EnumAssessmentToolSchema = z.enum(['calculator']);
+export type EnumAssessmentTool = z.infer<typeof EnumAssessmentToolSchema>;
 
 function uniqueArray<T extends ZodSchema>(schema: T) {
   return z.array(schema).refine((items) => new Set(items).size === items.length, {
@@ -48,6 +49,7 @@ export const GroupsRoleJsonSchema = z
       .describe('The maximum number of users that should be in this role.')
       .optional(),
   })
+  .strict()
   .describe('A custom role for use in group assessments.');
 
 export type GroupsRoleJson = z.infer<typeof GroupsRoleJsonSchema>;
@@ -75,6 +77,7 @@ const GroupsStudentPermissionsJsonSchema = z
       .optional()
       .default(true),
   })
+  .strict()
   .describe('Student permissions for group management.');
 
 const GroupsRolePermissionsJsonSchema = z
@@ -92,6 +95,7 @@ const GroupsRolePermissionsJsonSchema = z
       .optional()
       .default([]),
   })
+  .strict()
   .describe('Role-based permissions for group assessments.');
 
 export const GroupsJsonSchema = z
@@ -250,7 +254,7 @@ export type QuestionAlternativeJson = z.infer<typeof QuestionAlternativeJsonSche
 export type QuestionAlternativeJsonInput = z.input<typeof QuestionAlternativeJsonSchema>;
 
 // 'Block' is used to signify that this can either be a single question, or
-// a container for multiple question alternatives.
+// a container for multiple question alternatives (an "alternative pool").
 export const ZoneQuestionBlockJsonSchema = QuestionPointsJsonSchema.extend({
   comment: CommentJsonSchema.optional(),
   points: PointsJsonSchema.optional(),
@@ -269,7 +273,7 @@ export const ZoneQuestionBlockJsonSchema = QuestionPointsJsonSchema.extend({
     .number()
     .int()
     .gte(0)
-    .describe('Number of questions to choose from this group.')
+    .describe('Number of questions to choose from this pool.')
     .optional(),
   triesPerVariant: z
     .number()
@@ -428,8 +432,7 @@ export const AssessmentJsonSchema = z
       .describe(
         'List of access rules for the assessment. Access is permitted if any access rule is satisfied.',
       )
-      .optional()
-      .default([]),
+      .optional(),
     accessControl: z
       .array(AccessControlJsonSchema)
       .describe('Access control settings for the assessment.')

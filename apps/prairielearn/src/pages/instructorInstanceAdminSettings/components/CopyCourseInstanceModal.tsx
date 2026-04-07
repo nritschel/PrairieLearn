@@ -1,4 +1,5 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { type UseQueryResult, useMutation, useQuery } from '@tanstack/react-query';
+import type { inferRouterOutputs } from '@trpc/server';
 import clsx from 'clsx';
 import { useState } from 'react';
 import { Alert, Form, Modal, Spinner } from 'react-bootstrap';
@@ -17,13 +18,19 @@ import {
   type SelfEnrollmentFormValues,
 } from '../../../components/CourseInstanceSelfEnrollmentForm.js';
 import { CourseInstanceShortNameDescription } from '../../../components/ShortNameDescriptions.js';
+import { getAppError } from '../../../lib/client/errors.js';
 import type { PageContext } from '../../../lib/client/page-context.js';
 import {
   getCourseInstanceEditErrorUrl,
   getCourseInstanceSettingsUrl,
 } from '../../../lib/client/url.js';
 import { validateShortName } from '../../../lib/short-name.js';
-import { useTRPC } from '../utils/trpc-context.js';
+import { useTRPC } from '../../../trpc/courseInstance/context.js';
+import type { InstanceAdminSettingsError } from '../../../trpc/courseInstance/instance-admin-settings.js';
+import type { CourseInstanceRouter } from '../../../trpc/courseInstance/trpc.js';
+
+type AnalysisResult =
+  inferRouterOutputs<CourseInstanceRouter>['instanceAdminSettings']['analyzeAccessControl'];
 
 type Step = 'settings' | 'access-control';
 
@@ -53,7 +60,7 @@ export function CopyCourseInstanceModal({
   const [step, setStep] = useState<Step>('settings');
 
   const trpc = useTRPC();
-  const analysisQuery = useQuery(trpc.analyzeAccessControl.queryOptions());
+  const analysisQuery = useQuery(trpc.instanceAdminSettings.analyzeAccessControl.queryOptions());
 
   const methods = useForm<CopyFormValues>({
     defaultValues: {
@@ -136,8 +143,7 @@ export function CopyCourseInstanceModal({
     const valid = await trigger(['short_name', 'long_name']);
     if (!valid) return;
 
-    const analysis = analysisQuery.data;
-    if (analysis?.hasLegacyRules) {
+    if (analysisQuery.data?.hasLegacyRules) {
       setStep('access-control');
     } else {
       void handleSubmit((data) => copyMutation.mutate(data))();
@@ -203,7 +209,11 @@ export function CopyCourseInstanceModal({
             >
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isPending}>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isPending || (step === 'settings' && analysisQuery.isLoading)}
+            >
               {isPending
                 ? 'Copying...'
                 : step === 'settings' && analysisQuery.data?.hasLegacyRules
@@ -333,25 +343,11 @@ function AccessControlStep({
   accessControlStrategy,
   register,
 }: {
-  analysisQuery: ReturnType<typeof useQuery>;
+  analysisQuery: UseQueryResult<AnalysisResult, unknown>;
   accessControlStrategy: string;
   register: ReturnType<typeof useForm<CopyFormValues>>['register'];
 }) {
-  const analysis = analysisQuery.data as
-    | {
-        assessments: {
-          tid: string;
-          title: string;
-          type: string;
-          archetype: string;
-          canMigrate: boolean;
-          ruleCount: number;
-          hasUidRules: boolean;
-        }[];
-        hasLegacyRules: boolean;
-        allCanMigrate: boolean;
-      }
-    | undefined;
+  const analysis = analysisQuery.data;
 
   if (analysisQuery.isLoading) {
     return (
@@ -365,9 +361,15 @@ function AccessControlStep({
   }
 
   if (analysisQuery.isError) {
+    const appError = getAppError<InstanceAdminSettingsError>(analysisQuery.error);
+
     return (
       <Modal.Body>
-        <Alert variant="danger">Failed to analyze access control rules. You can still copy.</Alert>
+        <Alert variant="danger">
+          {appError?.message ?? 'Failed to analyze access control rules.'} You can still copy the
+          course instance. Assessment access rules will be migrated to the modern format where
+          possible; any rules that cannot be migrated will be preserved in their current format.
+        </Alert>
       </Modal.Body>
     );
   }

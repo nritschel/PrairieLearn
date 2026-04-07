@@ -8,6 +8,8 @@ import {
   jsonToMainRuleFormData,
 } from './types.js';
 
+const TEST_TIMEZONE = 'America/Chicago';
+
 const defaultMainRule: MainRuleData = {
   trackingId: 'main-1',
   listBeforeRelease: true,
@@ -21,15 +23,15 @@ const defaultMainRule: MainRuleData = {
   password: 'secret',
   prairieTestEnabled: false,
   prairieTestExams: [],
-  questionVisibility: { hideQuestions: false },
+  questionVisibility: { hideQuestions: true },
   scoreVisibility: { hideScore: false },
 };
 
 const baseOverride: OverrideData = {
   trackingId: 'o-base',
   appliesTo: {
-    targetType: 'individual',
-    individuals: [{ uid: 'a@b.com', name: 'A' }],
+    targetType: 'enrollment',
+    enrollments: [{ enrollmentId: 'e-0', uid: 'a@b.com', name: 'A' }],
     studentLabels: [],
   },
   overriddenFields: [],
@@ -40,7 +42,7 @@ const baseOverride: OverrideData = {
   afterLastDeadline: null,
   durationMinutes: null,
   password: null,
-  questionVisibility: { hideQuestions: false },
+  questionVisibility: { hideQuestions: true },
   scoreVisibility: { hideScore: false },
 };
 
@@ -48,9 +50,37 @@ function buildFormData(override: OverrideData): AccessControlFormData {
   return { mainRule: defaultMainRule, overrides: [override] };
 }
 
+describe('jsonToMainRuleFormData', () => {
+  it('defaults hideQuestions to true when afterComplete is not configured', () => {
+    const mainRule = jsonToMainRuleFormData({}, TEST_TIMEZONE);
+    expect(mainRule.questionVisibility.hideQuestions).toBe(true);
+  });
+
+  it('defaults hideScore to false when afterComplete is not configured', () => {
+    const mainRule = jsonToMainRuleFormData({}, TEST_TIMEZONE);
+    expect(mainRule.scoreVisibility.hideScore).toBe(false);
+  });
+
+  it('preserves hideQuestions: false when explicitly set in JSON', () => {
+    const mainRule = jsonToMainRuleFormData(
+      { afterComplete: { hideQuestions: false } },
+      TEST_TIMEZONE,
+    );
+    expect(mainRule.questionVisibility.hideQuestions).toBe(false);
+  });
+
+  it('preserves hideQuestions: true when explicitly set in JSON', () => {
+    const mainRule = jsonToMainRuleFormData(
+      { afterComplete: { hideQuestions: true } },
+      TEST_TIMEZONE,
+    );
+    expect(mainRule.questionVisibility.hideQuestions).toBe(true);
+  });
+});
+
 describe('formDataToJson', () => {
   it('defaults listBeforeRelease to false when omitted from the main rule JSON', () => {
-    const mainRule = jsonToMainRuleFormData({});
+    const mainRule = jsonToMainRuleFormData({}, TEST_TIMEZONE);
 
     expect(mainRule.listBeforeRelease).toBe(false);
   });
@@ -91,7 +121,7 @@ describe('formDataToJson', () => {
       trackingId: 'o-5',
       appliesTo: {
         targetType: 'student_label',
-        individuals: [],
+        enrollments: [],
         studentLabels: [
           { studentLabelId: '1', name: 'label-a' },
           { studentLabelId: '2', name: 'label-b' },
@@ -102,23 +132,23 @@ describe('formDataToJson', () => {
     const overrideJson = formDataToJson(buildFormData(override))[1];
     expect(overrideJson.labels).toEqual(['label-a', 'label-b']);
     expect(overrideJson.ruleType).toBeUndefined();
-    expect(overrideJson.individuals).toBeUndefined();
+    expect(overrideJson.enrollments).toBeUndefined();
   });
 
-  it('serializes individual appliesTo with ruleType and individuals', () => {
+  it('serializes enrollment appliesTo with ruleType and enrollments', () => {
     const override: OverrideData = {
       ...baseOverride,
       trackingId: 'o-6',
       appliesTo: {
-        targetType: 'individual',
-        individuals: [{ enrollmentId: 'e-1', uid: 'user@test.com', name: 'Test User' }],
+        targetType: 'enrollment',
+        enrollments: [{ enrollmentId: 'e-1', uid: 'user@test.com', name: 'Test User' }],
         studentLabels: [],
       },
     };
 
     const overrideJson = formDataToJson(buildFormData(override))[1];
     expect(overrideJson.ruleType).toBe('enrollment');
-    expect(overrideJson.individuals).toEqual([
+    expect(overrideJson.enrollments).toEqual([
       { enrollmentId: 'e-1', uid: 'user@test.com', name: 'Test User' },
     ]);
     expect(overrideJson.labels).toBeUndefined();
@@ -158,8 +188,8 @@ describe('formDataToJson', () => {
           ...baseOverride,
           trackingId: 'override-1',
           appliesTo: {
-            targetType: 'individual',
-            individuals: [{ uid: 'user@example.com', name: 'Test User' }],
+            targetType: 'enrollment',
+            enrollments: [{ enrollmentId: 'e-2', uid: 'user@example.com', name: 'Test User' }],
             studentLabels: [],
           },
           overriddenFields: [

@@ -6,16 +6,16 @@ import { Hydrate } from '@prairielearn/react/server';
 import { CommentPopoverHtml } from '../../components/CommentPopover.js';
 import { Modal } from '../../components/Modal.js';
 import { PageLayout } from '../../components/PageLayout.js';
-import type { AssessmentMigrationAnalysis } from '../../lib/access-control-migration.js';
+import type { AssessmentMigrationAnalysis } from '../../lib/assessment-access-control/migration.js';
 import { compiledStylesheetTag } from '../../lib/assets.js';
 import { extractPageContext } from '../../lib/client/page-context.js';
 import { isRenderableComment } from '../../lib/comments.js';
 import { config } from '../../lib/config.js';
 import { JsonCommentSchema } from '../../lib/db-types.js';
 import type { ResLocalsForPage } from '../../lib/res-locals.js';
+import type { AccessControlJsonWithId } from '../../models/assessment-access-control-rules.js';
 
 import { AssessmentAccessControl } from './components/AssessmentAccessControl.js';
-import type { AccessControlJsonWithId } from './components/types.js';
 
 export const AssessmentAccessRulesSchema = z.object({
   mode: z.string(),
@@ -49,6 +49,7 @@ export function InstructorAssessmentAccess({
   migrationPreview,
   origHash,
   canEdit,
+  enhancedAccessControlEnabled,
 }: {
   resLocals: ResLocalsForPage<'assessment'>;
   accessRules: AssessmentAccessRules[];
@@ -56,6 +57,7 @@ export function InstructorAssessmentAccess({
   migrationPreview: MigrationPreview | null;
   origHash: string;
   canEdit: boolean;
+  enhancedAccessControlEnabled: boolean;
 }) {
   const showComments = accessRules.some((access_rule) => isRenderableComment(access_rule.comment));
   return PageLayout({
@@ -87,13 +89,19 @@ export function InstructorAssessmentAccess({
             : ''}
         </div>
 
-        <div class="alert alert-warning mb-0 rounded-0 border-start-0 border-end-0 border-top-0">
-          ${migrationAnalysis && !migrationAnalysis.canMigrate
-            ? html`This assessment uses the legacy access control system. Automatic migration is not
-              available for this assessment's access rules.`
-            : html`This assessment uses the legacy access control system. Consider migrating to the
-              modern format for a better editing experience.`}
-        </div>
+        ${enhancedAccessControlEnabled
+          ? html`
+              <div
+                class="alert alert-warning mb-0 rounded-0 border-start-0 border-end-0 border-top-0"
+              >
+                ${migrationAnalysis && !migrationAnalysis.canMigrate
+                  ? html`This assessment uses the legacy access control system. Automatic migration
+                    is not available for this assessment's access rules.`
+                  : html`This assessment uses the legacy access control system. Consider migrating
+                    to the modern format for a better editing experience.`}
+              </div>
+            `
+          : ''}
 
         <div class="table-responsive">
           <table class="table table-sm table-hover" aria-label="Access rules">
@@ -295,7 +303,7 @@ export function InstructorAssessmentAccessNew({
   initialData,
 }: {
   resLocals: ResLocalsForPage<'assessment'>;
-  origHash: string;
+  origHash: string | null;
   trpcCsrfToken: string;
   initialData: AccessControlJsonWithId[];
 }) {
@@ -307,7 +315,10 @@ export function InstructorAssessmentAccessNew({
   return PageLayout({
     resLocals,
     pageTitle: 'Access',
-    headContent: [compiledStylesheetTag('splitPane.css')],
+    headContent: [
+      compiledStylesheetTag('splitPane.css'),
+      compiledStylesheetTag('instructorAssessmentAccess.css'),
+    ],
     navContext: {
       type: 'instructor',
       page: 'assessment',

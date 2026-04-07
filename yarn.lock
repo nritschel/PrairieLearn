@@ -5012,6 +5012,7 @@ __metadata:
   resolution: "@prairielearn/eslint-config@workspace:packages/eslint-config"
   dependencies:
     "@eslint-react/eslint-plugin": "npm:^4.2.3"
+    "@eslint/config-helpers": "npm:^0.5.4"
     "@eslint/eslintrc": "npm:^3.3.5"
     "@eslint/js": "npm:^10.0.1"
     "@prairielearn/eslint-plugin": "workspace:^"

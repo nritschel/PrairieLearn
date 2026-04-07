@@ -861,8 +861,6 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
         data["format_errors"][name] = "No graph has been submitted."
         return
 
-    # The actual submission data is in this field
-
     allow_blank = pl.get_boolean_attrib(element, "allow-blank", ALLOW_BLANK_DEFAULT)
     empty = True
 
@@ -1034,17 +1032,19 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
 def test(element_html: str, data: pl.ElementTestData) -> None:
     element = lxml.html.fragment_fromstring(element_html)
     readonly = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
+
     if readonly:
         return
 
     name = pl.get_string_attrib(element, "answers-name")
+    allow_blank = pl.get_boolean_attrib(element, "allow-blank", ALLOW_BLANK_DEFAULT)
     key = name + "-sketchresponse-submission"
     weight = pl.get_integer_attrib(element, "weight", WEIGHT_DEFAULT)
     result = data["test_type"]
     solution_state = data["params"][name]["solution_state"]
 
     # If no solution is defined, we can't generate correct/incorrect submissions, so test invalid instead
-    if result == "invalid" or not solution_state:
+    if result == "invalid" or (len(solution_state) == 0 and not allow_blank):
         data["format_errors"][name] = "No graph has been submitted."
         data["raw_submitted_answers"][key] = base64.b64encode(
             json.dumps({}).encode("utf-8")
@@ -1070,7 +1070,7 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
     # Setting submitted_answers because it is needed for invoking grading below
     data.setdefault("submitted_answers", {})[key] = data["raw_submitted_answers"][key]
 
-    # Determine expected grading result by actually running the graders
+    # Determine expected grading result by actually running the grading logic
     # Note that depending on the grading criteria and provided solution, it is both possible that the incorrect
     # submission gets some (or all) points, and that the supposedly correct solution gets less than full points
     data["partial_scores"][name] = _grade_with_staging(name, data, weight)
@@ -1085,7 +1085,7 @@ def _solution_to_gradeable(
     canvas_width: int,
     canvas_height: int,
 ) -> dict:
-    """Convert solution_state (rendering format) to gradeable submission format."""
+    """Convert solution_state (formatted for rendering) to gradeable submission format."""
     gradeable: dict = {}
 
     for tool_id, drawings in solution_state.items():

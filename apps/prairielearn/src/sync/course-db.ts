@@ -27,6 +27,7 @@ import {
   type CourseInstanceJson,
   type CourseJson,
   type GroupsJson,
+  MAX_ACCESS_CONTROL_RULES,
   type QuestionJson,
   type QuestionPointsJson,
   type TagJson,
@@ -1175,6 +1176,12 @@ export function validateAccessControlRules({
   // If the feature is completely unused, we can skip all validation and we don't need a default rule.
   if (rules.length === 0 && enrollmentRulesCount === 0) {
     return { errors, warnings };
+  }
+
+  if (rules.length > MAX_ACCESS_CONTROL_RULES) {
+    errors.push(
+      `Too many access control rules: ${rules.length}. Maximum allowed is ${MAX_ACCESS_CONTROL_RULES}.`,
+    );
   }
 
   // A main rule has no `labels` property (applies to everyone)

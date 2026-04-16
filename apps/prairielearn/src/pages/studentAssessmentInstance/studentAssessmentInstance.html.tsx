@@ -431,9 +431,9 @@ export function StudentAssessmentInstance({
                       <td>
                         <div class="d-flex align-items-center">
                           ${RowLabel({
+                            courseInstanceId: resLocals.course_instance.id,
                             instance_question_row,
                             userGroupRoles,
-                            urlPrefix: resLocals.urlPrefix,
                             hasStatusColumn: resLocals.assessment.type === 'Exam',
                             rowLabelText:
                               resLocals.assessment.type === 'Exam'
@@ -557,8 +557,8 @@ export function StudentAssessmentInstance({
                                   </td>
                                   <td class="text-center">
                                     ${QuestionVariantHistory({
-                                      urlPrefix: resLocals.urlPrefix,
                                       instanceQuestionId: instance_question_row.id,
+                                      courseInstanceId: resLocals.course_instance.id,
                                       previousVariants: instance_question_row.previous_variants,
                                     })}
                                   </td>

@@ -10,17 +10,15 @@ import {
   RegenerateInstanceAlert,
   RegenerateInstanceModal,
 } from '../../components/AssessmentRegenerate.js';
+import { ExamQuestionAvailablePoints } from '../../components/ExamQuestionAvailablePoints.js';
+import { ExamQuestionStatus } from '../../components/ExamQuestionStatus.js';
 import { GroupWorkInfoContainer } from '../../components/GroupWorkInfoContainer.js';
 import { InstructorInfoPanel } from '../../components/InstructorInfoPanel.js';
 import { Modal } from '../../components/Modal.js';
 import { PageLayout } from '../../components/PageLayout.js';
 import { PersonalNotesPanel } from '../../components/PersonalNotesPanel.js';
-import {
-  ExamQuestionAvailablePoints,
-  ExamQuestionStatus,
-  InstanceQuestionPoints,
-  QuestionVariantHistory,
-} from '../../components/QuestionScore.js';
+import { InstanceQuestionPoints } from '../../components/QuestionScore.js';
+import { QuestionVariantHistory } from '../../components/QuestionVariantHistory.js';
 import { ScorebarHtml } from '../../components/Scorebar.js';
 import { StudentAccessRulesPopover } from '../../components/StudentAccessRulesPopover.js';
 import { TimeLimitExpiredModal } from '../../components/TimeLimitExpiredModal.js';
@@ -34,7 +32,8 @@ import {
   QuestionSchema,
 } from '../../lib/db-types.js';
 import { formatPoints } from '../../lib/format.js';
-import { type GroupInfo, getRoleNamesForUser } from '../../lib/groups.js';
+import { getRoleNamesForUser } from '../../lib/groups.js';
+import type { GroupInfo } from '../../lib/groups.shared.js';
 import type { ResLocalsForPage } from '../../lib/res-locals.js';
 import { SimpleVariantWithScoreSchema } from '../../models/variant.js';
 

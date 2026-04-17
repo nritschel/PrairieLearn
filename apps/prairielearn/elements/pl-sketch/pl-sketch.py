@@ -808,6 +808,22 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         element, "overlay-solution", OVERLAY_SOLUTION_DEFAULT
     )
 
+    # In the question/submission panel, if overlay_solution is true and the correct answer is shown,
+    # overlay the solution drawings translucently on top of the student's submission
+    if data["panel"] != "answer" and overlay_solution and data["correct_answer_shown"]:
+        for tool_id, drawings in solution.items():
+            # We need to create a tool copy to be able to set up a different config
+            overlay_tool = dict(data["params"][name]["tool_data"][tool_id])
+            overlay_tool_id = f"{tool_id}-solution-overlay"
+            overlay_tool["id"] = overlay_tool_id
+            overlay_tool["readonly"] = True
+            overlay_tool["solution_overlay"] = True
+
+            # Plugins are rendered in order, so we want to insert solutions at the start (but after the axes, which are at position 0)
+            config["plugins"].append(overlay_tool)
+            config["initialstate"].setdefault(overlay_tool_id, [])
+            config["initialstate"][overlay_tool_id].extend(drawings)
+
     scored = False
     score = None
     feedback = None
@@ -843,12 +859,6 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         # Using a random ID here as each SketchResponse instance needs a unique ID, and only the question panel ID
         # matters because it gets parsed on submission. All other panel IDs don't matter as long as they are unique.
         config["readonly"] = True
-
-        # If overlay_solution is true and the correct answer is shown, we merge the initial and the solution state for display
-        if overlay_solution and data["correct_answer_shown"]:
-            for tool_id, drawings in solution.items():
-                config["initialstate"].setdefault(tool_id, [])
-                config["initialstate"][tool_id].extend(drawings)
 
         random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
         html_params = {

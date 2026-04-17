@@ -19,10 +19,10 @@
     <pl-sketch-tool id="fd" type="free-draw"></pl-sketch-tool>
     <pl-sketch-tool id="hl" type="horizontal-line"></pl-sketch-tool>
     <pl-sketch-tool id="pt" type="point" read-only="true"></pl-sketch-tool>
-    <pl-sketch-initial tool-id="pt" coordinates="-1,0.5"></pl-sketch-initial>
-    <pl-sketch-initial tool-id="pt" coordinates="0,1"></pl-sketch-initial>
-    <pl-sketch-initial tool-id="pt" coordinates="1,2"></pl-sketch-initial>
-    <pl-sketch-initial tool-id="pt" coordinates="2,4"></pl-sketch-initial>
+    <pl-sketch-initial tool-id="pt" coordinates="(-1,0.5)"></pl-sketch-initial>
+    <pl-sketch-initial tool-id="pt" coordinates="(0,1)"></pl-sketch-initial>
+    <pl-sketch-initial tool-id="pt" coordinates="(1,2)"></pl-sketch-initial>
+    <pl-sketch-initial tool-id="pt" coordinates="(2,4)"></pl-sketch-initial>
     <pl-sketch-grade type="match" tool-id="hl" y="0"></pl-sketch-grade> 
     <pl-sketch-grade type="count" tool-id="hl" count="1"></pl-sketch-grade> 
     <pl-sketch-grade type="match-function" tool-id="fd" function="2**x"></pl-sketch-grade> 
@@ -48,7 +48,7 @@
     <pl-sketch-tool id="spline" type="spline"></pl-sketch-tool>
     <pl-sketch-tool id="polyline" type="polyline"></pl-sketch-tool>
     <pl-sketch-tool id="polygon" type="polygon"></pl-sketch-tool>
-    <pl-sketch-solution tool-id="point" coordinates="0,0"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="point" coordinates="(0,0)"></pl-sketch-solution>
   </pl-sketch>
 </pl-card>
 
@@ -86,9 +86,9 @@
     <pl-sketch-grade type="undefined-in" tool-id="p" x-range="2,"></pl-sketch-grade> 
     <pl-sketch-grade type="less-than" tool-id="p" y="3"></pl-sketch-grade> 
     <pl-sketch-grade type="greater-than" tool-id="p" y="-3"></pl-sketch-grade> 
-    <pl-sketch-solution tool-id="p" coordinates="0,0"></pl-sketch-solution>
-    <pl-sketch-solution tool-id="p" coordinates="1,1"></pl-sketch-solution>
-    <pl-sketch-solution tool-id="p" coordinates="1,0"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="p" coordinates="(0,0)"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="p" coordinates="(1,1)"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="p" coordinates="(1,0)"></pl-sketch-solution>
   </pl-sketch>
 </pl-card>
 
@@ -113,7 +113,7 @@
     <pl-sketch-grade type="defined-in" tool-id="fun" x-range="-1," stage="1"></pl-sketch-grade> 
     <pl-sketch-grade type="match-function" tool-id="fun" function="x" x-range="-1,1" stage="2" weight="3"></pl-sketch-grade> 
     <pl-sketch-grade type="monot-increasing" tool-id="fun" x-range="1," stage="2"></pl-sketch-grade> 
-    <pl-sketch-solution tool-id="fun" coordinates="-1,-1,1,1,5,5"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="fun" coordinates="(-1,-1),(1,1),(5,5)"></pl-sketch-solution>
   </pl-sketch>
 </pl-card>
 
@@ -138,7 +138,7 @@
     <pl-sketch-grade type="match" tool-id="area" x="1" y="1"></pl-sketch-grade> 
     <pl-sketch-grade type="match" tool-id="area" x="2" y="-2"></pl-sketch-grade> 
     <pl-sketch-grade type="match" tool-id="area" x="2" y="2"></pl-sketch-grade> 
-    <pl-sketch-solution tool-id="area" coordinates="0,0,2,2,2,-2,0,0"></pl-sketch-solution>
+    <pl-sketch-solution tool-id="area" coordinates="(0,0),(2,2),(2,-2),(0,0)"></pl-sketch-solution>
     
     {{! Ungraded helper lines for easier shading  }}
     <pl-sketch-tool id="sp1" type="spline" read-only="true"></pl-sketch-tool>

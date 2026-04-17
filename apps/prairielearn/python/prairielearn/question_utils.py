@@ -87,6 +87,9 @@ class QuestionData(TypedDict):
     panel: Literal["question", "submission", "answer"]
     """The panel that is being rendered."""
 
+    correct_answer_shown: bool
+    """Whether the correct answer (in the answer panel) is currently shown to the student."""
+
     extensions: dict[str, Any]
     """A list of extensions that are available to be loaded by this element."""
 

@@ -2,6 +2,7 @@ import base64
 import copy
 import json
 import random
+import re
 import string
 
 import chevron
@@ -24,7 +25,7 @@ WIDTH_DEFAULT = 800
 HEIGHT_DEFAULT = 450
 ENFORCE_BOUNDS_DEFAULT = False
 READ_ONLY_DEFAULT = False
-ADD_DEFAULT_TOOLS_DEFAULT = False
+OVERLAY_SOLUTION_DEFAULT = True
 ALLOW_BLANK_DEFAULT = False
 
 
@@ -39,6 +40,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         "height",
         "enforce-bounds",
         "read-only",
+        "overlay-solution",
         "allow-blank",
     ]
     pl.check_attribs(element, required_attribs, optional_attribs)
@@ -47,6 +49,9 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     pl.check_answers_names(data, name)
 
     read_only = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
+
+    # Just validate this is actually boolean - we don't need the value here
+    pl.get_boolean_attrib(element, "read-only", OVERLAY_SOLUTION_DEFAULT)
 
     toolbar: list = []  # List of tools as it will be sent to the client
     tool_data = {}  # ID-based lookup table for tools that is used internally
@@ -132,10 +137,10 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         )
     height = pl.get_integer_attrib(element, "height", HEIGHT_DEFAULT)
 
-    x_range = split_range(
+    x_range = _split_range(
         pl.get_string_attrib(element, "x-range", XRANGE_DEFAULT), None, None
     )
-    y_range = split_range(
+    y_range = _split_range(
         pl.get_string_attrib(element, "y-range", YRANGE_DEFAULT), None, None
     )
 
@@ -207,7 +212,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     }
 
 
-def split_range(
+def _split_range(
     xrange: str, default_start: float | None, default_end: float | None
 ) -> list[float]:
     """
@@ -575,13 +580,13 @@ def _check_grader(
                 "y-range",
             ])
             if pl.get_boolean_attrib(grader_tag, "xy-flip", False):
-                split_range(
+                _split_range(
                     pl.get_string_attrib(grader_tag, "y-range", ","),
                     ranges["y_start"],
                     ranges["y_end"],
                 )
             else:
-                split_range(
+                _split_range(
                     pl.get_string_attrib(grader_tag, "x-range", ","),
                     ranges["x_start"],
                     ranges["x_end"],
@@ -642,12 +647,12 @@ def _check_grader(
         "feedback": pl.get_string_attrib(grader_tag, "feedback", None),
         "x": pl.get_float_attrib(grader_tag, "x", None),
         "y": pl.get_float_attrib(grader_tag, "y", None),
-        "xrange": split_range(
+        "xrange": _split_range(
             pl.get_string_attrib(grader_tag, "x-range", ","),
             ranges["x_start"],
             ranges["x_end"],
         ),
-        "yrange": split_range(
+        "yrange": _split_range(
             pl.get_string_attrib(grader_tag, "y-range", ","),
             ranges["y_start"],
             ranges["y_end"],
@@ -682,7 +687,7 @@ def _check_drawing(
     drawing_tool = pl.get_string_attrib(drawing_tag, "tool-id")
     drawing_coords = pl.get_string_attrib(drawing_tag, "coordinates", None)
     drawing_fun = pl.get_string_attrib(drawing_tag, "function", None)
-    drawing_xrange = split_range(
+    drawing_xrange = _split_range(
         pl.get_string_attrib(drawing_tag, "x-range", ","),
         ranges["x_start"],
         ranges["x_end"],
@@ -698,12 +703,12 @@ def _check_drawing(
             'Each initial drawing element needs either a "coordinates" or a "function" attribute.'
         )
 
-    coords = []
     if drawing_coords is not None:
-        coords.extend(
-            float(coord.replace("(", "").replace(")", "").strip())
-            for coord in drawing_coords.split(",")
+        coords = _parse_drawing_coordinates(
+            drawing_coords, tool_data[drawing_tool]["name"]
         )
+    else:
+        coords = []
 
     match tool_data[drawing_tool]["name"]:
         case "horizontal-line" | "vertical-line":
@@ -713,23 +718,25 @@ def _check_drawing(
                 )
         case "point":
             if len(coords) != 2:
-                raise ValueError("Drawings for points need exactly two coordinates.")
+                raise ValueError(
+                    "Drawings for points need exactly one coordinate pair."
+                )
         case "line-segment":
             if len(coords) != 4:
                 raise ValueError(
-                    "Drawings for lines need exactly four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines need exactly two coordinate pairs."
                 )
         case "polyline":
             if len(coords) < 4 or len(coords) % 2 != 0:
                 raise ValueError(
-                    "Drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines with multiple segments need at least two coordinate pairs."
                 )
         case "spline" | "freeform":
             if drawing_fun is not None:
                 parse_function_string(drawing_fun)
             elif len(coords) < 4 or len(coords) % 2 != 0:
                 raise ValueError(
-                    "Drawings for lines with multiple segments need an even number and at least four coordinates (x/y pairs for start and end)."
+                    "Drawings for lines with multiple segments need at least two coordinate pairs."
                 )
         case _:
             raise ValueError(f'Unknown tool type "{tool_data[drawing_tool]["name"]}"')
@@ -741,6 +748,37 @@ def _check_drawing(
         "xrange": drawing_xrange,
     }
     return drawing
+
+
+def _parse_drawing_coordinates(drawing_coords: str, tool_name: str) -> list[float]:
+    # Simple case for horizontal and vertical lines where we just need one coordinate value
+    if tool_name in {"horizontal-line", "vertical-line"}:
+        try:
+            return [float(drawing_coords.strip())]
+        except ValueError as err:
+            raise ValueError(
+                f'Invalid coordinate "{drawing_coords}". Drawings for {tool_name} tools need exactly one numeric coordinate.'
+            ) from err
+
+    # For other tools, we expect a list of coordinate pairs in the format "(x,y),(x,y),..."
+    # We build two regexes based on the same pattern here: one for validation and one for extracting coordinate pairs
+    coordinate_pattern = r"\s*\([^(),]+,[^(),]+\)\s*"
+    coordinate_regex = re.compile(coordinate_pattern)
+    comma_separated_pairs_regex = re.compile(
+        rf"^{coordinate_pattern}(,{coordinate_pattern})*$"
+    )
+    if not comma_separated_pairs_regex.match(drawing_coords):
+        raise ValueError(
+            f'Invalid coordinate "{drawing_coords}". Drawings for {tool_name} tools need parenthesis-wrapped, comma-separated coordinate pairs.'
+        )
+
+    pairs = coordinate_regex.findall(drawing_coords)
+
+    coords: list[float] = []
+    for pair in pairs:
+        x_str, y_str = pair.strip()[1:-1].split(",")
+        coords.extend([float(x_str.strip()), float(y_str.strip())])
+    return coords
 
 
 def render(element_html: str, data: pl.QuestionData) -> str:
@@ -766,6 +804,9 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             )
 
     read_only = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
+    overlay_solution = pl.get_boolean_attrib(
+        element, "overlay-solution", OVERLAY_SOLUTION_DEFAULT
+    )
 
     scored = False
     score = None
@@ -802,6 +843,13 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         # Using a random ID here as each SketchResponse instance needs a unique ID, and only the question panel ID
         # matters because it gets parsed on submission. All other panel IDs don't matter as long as they are unique.
         config["readonly"] = True
+
+        # If overlay_solution is true and the correct answer is shown, we merge the initial and the solution state for display
+        if overlay_solution and data["correct_answer_shown"]:
+            for tool_id, drawings in solution.items():
+                config["initialstate"].setdefault(tool_id, [])
+                config["initialstate"][tool_id].extend(drawings)
+
         random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
         html_params = {
             "id": random_id,

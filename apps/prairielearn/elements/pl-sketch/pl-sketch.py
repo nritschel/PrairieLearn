@@ -333,9 +333,12 @@ def _check_tool(tool_tag: lxml.html.HtmlElement) -> SketchTool:
             defaults["label"] = "Function f(x)"
             defaults["color"] = "purple"
         case "polyline":
+            optional_attribs.extend(["dash-style"])
             defaults["name"] = "polyline"
             defaults["label"] = "Function f(x)"
             defaults["color"] = "orange"
+            defaults["fillColor"] = "none"
+            defaults["opacity"] = 1
             defaults["closed"] = False
         case "polygon":
             optional_attribs.extend(["dash-style", "opacity", "fill-color"])
@@ -817,10 +820,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             overlay_tool_id = f"{tool_id}-solution-overlay"
             overlay_tool["id"] = overlay_tool_id
             overlay_tool["readonly"] = True
-            overlay_tool["solution_overlay"] = True
+            overlay_tool["overlay"] = True
 
             # Plugins are rendered in order, so we want to insert solutions at the start (but after the axes, which are at position 0)
-            config["plugins"].append(overlay_tool)
+            config["plugins"].insert(1, overlay_tool)
             config["initialstate"].setdefault(overlay_tool_id, [])
             config["initialstate"][overlay_tool_id].extend(drawings)
 
@@ -839,7 +842,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     all_incorrect = score == 0
 
     if data["panel"] == "question":
-        if read_only:
+        if read_only or not data["editable"]:
             config["readonly"] = True
         html_params = {
             "id": name,

@@ -811,9 +811,17 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         element, "overlay-solution", OVERLAY_SOLUTION_DEFAULT
     )
 
+    overlay_displayed = False
+
     # In the question/submission panel, if overlay_solution is true and the correct answer is shown,
     # overlay the solution drawings translucently on top of the student's submission
-    if data["panel"] != "answer" and overlay_solution and data["correct_answer_shown"]:
+    if (
+        data["panel"] != "answer"
+        and overlay_solution
+        and len(solution) > 0
+        and data["correct_answer_shown"]
+    ):
+        overlay_displayed = True
         for tool_id, drawings in solution.items():
             # We need to create a tool copy to be able to set up a different config
             overlay_tool = dict(data["params"][name]["tool_data"][tool_id])
@@ -857,6 +865,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "all_incorrect": all_incorrect,
             "format_error": data["format_errors"].get(name, None),
             "read_only": read_only,
+            "overlay_solution": overlay_displayed,
         }
     elif data["panel"] == "submission":
         # Using a random ID here as each SketchResponse instance needs a unique ID, and only the question panel ID
@@ -877,6 +886,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             "all_incorrect": all_incorrect,
             "format_error": data["format_errors"].get(name, None),
             "read_only": read_only,
+            "overlay_solution": overlay_displayed,
         }
     elif len(solution) > 0:  # answer panel (has solution to display)
         config["initialstate"] = solution

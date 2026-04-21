@@ -15,9 +15,9 @@ window.SketchInput = function (id) {
             overlay.style.display = overlay.style.display === 'none' ? 'inherit' : 'none';
           });
           overlayButton.textContent =
-            overlayButton.textContent === 'Hide Solution Overlay'
-              ? 'Show Solution Overlay'
-              : 'Hide Solution Overlay';
+            overlayButton.textContent === 'Show Solution Overlay'
+              ? 'Hide Solution Overlay'
+              : 'Show Solution Overlay';
         }
       });
     }

@@ -5,6 +5,23 @@ window.SketchInput = function (id) {
       id,
       config,
     );
+
+    const overlayButton = document.getElementById(id + '-overlay-toggle');
+    if (overlayButton) {
+      overlayButton.addEventListener('click', function () {
+        const overlays = document.querySelectorAll(`#${id}-si-container .overlay`);
+        if (overlays.length > 0) {
+          overlays.forEach((overlay) => {
+            overlay.style.display = overlay.style.display === 'none' ? 'inherit' : 'none';
+          });
+          overlayButton.textContent =
+            overlayButton.textContent === 'Hide Solution Overlay'
+              ? 'Show Solution Overlay'
+              : 'Hide Solution Overlay';
+        }
+      });
+    }
+
     si.messageBus.on('warnUser', function (_, error) {
       console.error(error);
     });

@@ -24,6 +24,7 @@
           {{/all_incorrect}}
       {{/all_correct}}
     {{/scored}}
+    {{/read_only}}
     <div class="d-flex align-items-center gap-2 w-100">
       {{#format_error}}
       <button
@@ -38,17 +39,16 @@
           <span class="me-1">Invalid</span>
           <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
       </button>
-    {{/format_error}}
-    {{/read_only}}
-    {{#overlay_solution}}
-      <button
-          type="button"
-          class="btn btn-light border d-flex align-items-center"
-          id="{{id}}-overlay-toggle"
-      >
-          <span class="me-1">Hide Solution Overlay</span>
-      </button>
-    {{/overlay_solution}}
+      {{/format_error}}
+      {{#overlay_solution}}
+        <button
+            type="button"
+            class="btn btn-light border d-flex align-items-center"
+            id="{{id}}-overlay-toggle"
+        >
+            <span class="me-1">Hide Solution Overlay</span>
+        </button>
+      {{/overlay_solution}}
     </div>
     <div class="sketchresponse">
       {{! Base64-encoded config data for SketchResponse }}

@@ -253,7 +253,7 @@ def _split_range(
         result[1] = default_end
     if result[0] is None or result[1] is None:
         raise ValueError(
-            f"Invalid range: {xrange}.No empty range placeholders are allowed for canvas ranges."
+            f"Invalid range: {xrange}. No empty range placeholders are allowed for canvas ranges."
         )
     if result[0] >= result[1]:
         raise ValueError(

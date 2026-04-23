@@ -16,14 +16,14 @@ window.SketchInput = function (id, overlay_solution = false) {
         buttonWrapper.innerHTML = `
         <button
             type="button"
-            class="js-overlay-toggle btn btn-light border position-absolute translate-middle bottom-0 end-0 m-3"
+            class="js-overlay-toggle btn btn-light border border-dark position-absolute translate-middle bottom-0 end-0 m-3"
             id="${id}-overlay-toggle"
             title="Toggle solution display"
             data-bs-toggle="tooltip"
             data-bs-placement="top"
             aria-label="Toggle solution display"
         >
-            <i class="bi bi-layers-half" aria-hidden="true"></i>
+            <i class="bi bi-layers-fill" aria-hidden="true"></i>
         </button>
       `;
         container.append(buttonWrapper);

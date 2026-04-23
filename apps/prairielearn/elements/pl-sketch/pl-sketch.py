@@ -82,9 +82,15 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
     # Add default tool if no tools have been specified
     if len(tool_data) == 0:
-        fd = {"name": "freeform", "id": "fd", "label": "Function f(x)", "color": "blue"}
+        fd = {
+            "name": "freeform",
+            "id": "fd",
+            "label": "Function f(x)",
+            "color": "blue",
+        }
         tool_data["fd"] = {
-            "name": "free-draw",
+            "name": "freeform",
+            "id": "fd",
             "helper": False,
             "readonly": False,
             "label": "Function f(x)",

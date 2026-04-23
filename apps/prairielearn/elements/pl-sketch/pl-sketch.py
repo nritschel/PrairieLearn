@@ -794,7 +794,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     element = lxml.html.fragment_fromstring(element_html)
     name = pl.get_string_attrib(element, "answers-name")
 
-    config = data["params"][name]["config"]
+    config = copy.deepcopy(data["params"][name]["config"])
     solution = data["params"][name]["solution_state"]
 
     submission = data["raw_submitted_answers"].get(

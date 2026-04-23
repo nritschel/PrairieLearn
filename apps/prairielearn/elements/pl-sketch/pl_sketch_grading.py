@@ -532,8 +532,7 @@ def defined_in(
 
     gf_tools = ["spline", "freeform", "polyline"]
     xrange = []
-    if len(tools_to_check) == 0:
-        debug_message.append("No submission found.")
+
     for toolid in tools_to_check:
         tool_used = tool_dict[toolid]["name"]
         if tool_used == "polyline" and tool_dict[toolid]["closed"]:

@@ -53,7 +53,9 @@ window.SketchInput = function (id, overlay_solution = false) {
       const siState = JSON.parse(si.getState());
       // State is needed for restoring submissions, gradeable for grading; merge the two dicts to reduce redundancy
       siState['gradeable'] = siGradeable['data'];
-      $('#' + id + '-sketchresponse-submission').val(btoa(JSON.stringify(siState)));
+      $('#' + id + '-sketchresponse-submission').val(
+        btoa(unescape(encodeURIComponent(JSON.stringify(siState)))),
+      );
     };
     // si.getGradeable exits drawing mode, so only call it upon form submission instead of live updates
     const questionForm = document.getElementById(id + '-si-container').closest('form');
@@ -61,7 +63,7 @@ window.SketchInput = function (id, overlay_solution = false) {
       questionForm.addEventListener('submit', updateState);
     }
   }
-  const configData = atob($('#' + id + '-sketchresponse-data').text());
+  const configData = decodeURIComponent(escape(atob($('#' + id + '-sketchresponse-data').text())));
   const config = JSON.parse(configData);
 
   prepareData();

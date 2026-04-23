@@ -2,7 +2,13 @@ import base64
 import json
 
 import prairielearn as pl
-from sketchresponse.grader_lib import Asymptote, GradeableFunction, LineSegment, Polygon
+from sketchresponse.grader_lib import (
+    Asymptote,
+    GradeableFunction,
+    LineSegment,
+    MultiFunction,
+    Polygon,
+)
 from sketchresponse.types import SketchGrader, SketchTool
 from sketchresponse.utils import (
     flip_grader_data,
@@ -554,7 +560,7 @@ def defined_in(
     if not tool_grader:
         return 0, grader["weight"], [feedback]
 
-    rd = tool_grader.collapse_ranges(xrange)
+    rd = MultiFunction.MultiFunction.collapse_ranges(xrange)
     gap_length = get_gap_length_px(rd, x1, x2, submission, config)
     correct = gap_length <= tolerance
     if debug:

@@ -44,7 +44,7 @@ Due to the highly graphical nature of this element, there are currently no viabl
 | `width`            | integer           | 800      | Display width of the canvas in pixels. Note that the element is not responsive, so custom widths can cause display issues and should be used with care.                                                   |
 | `height`           | integer           | 450      | Display height of the canvas in pixels.                                                                                                                                                                   |
 | `read-only`        | boolean           | false    | If set to `true`, the graph is not editable and the top toolbar is removed. This setting can be used in combination with `pl-sketch-initial` (see below) to render drawings as static question materials. |
-| `overlay-solution` | boolean           | true     | If set to `true`, the sample solution (defined via `pl-sketch-solution` tags) is overlaid with student submissions once the question's answer is revealed to allow an easier comparision.                 |
+| `overlay-solution` | boolean           | true     | If set to `true`, the sample solution (defined via `pl-sketch-solution` tags) is overlaid with student submissions once the question's answer is revealed to allow an easier comparison.                  |
 | `enforce-bounds`   | boolean           | false    | If set to `true`, objects cannot be dragged past the edges of the canvas.                                                                                                                                 |
 | `allow-blank`      | boolean           | false    | Allows the graph to be graded even if it is empty. If the initial canvas is not empty and is submitted without changes, it is not considered blank and always treated as a valid submission.              |
 
@@ -244,14 +244,14 @@ In addition to drawing individual coordinates, `pl-sketch-initial` and `pl-sketc
 For details on what types of symbolic expressions are supported, see the relevant section in `pl-sketch-grade`. Note that functions are rendered as one continuous line, so for non-continuous functions, it might be necessary to split them into multiple continuous intervals to avoid visual artifacts. For example:
 
 ```html
-<pl-sketch-initial toolid="fd" function="1/x**3"></pl-sketch-initial>
+<pl-sketch-initial tool-id="fd" function="1/x**3"></pl-sketch-initial>
 ```
 
 should be defined as:
 
 ```html
-<pl-sketch-initial toolid="fd" function="1/x**3" x-range="-5,0"></pl-sketch-initial>
-<pl-sketch-initial toolid="fd" function="1/x**3" x-range="0,5"></pl-sketch-initial>
+<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="-5,0"></pl-sketch-initial>
+<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="0,5"></pl-sketch-initial>
 ```
 
 to avoid the left and right hand side of the vertical asymptote being connected.

@@ -51,7 +51,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     read_only = pl.get_boolean_attrib(element, "read-only", READ_ONLY_DEFAULT)
 
     # Just validate this is actually boolean - we don't need the value here
-    pl.get_boolean_attrib(element, "read-only", OVERLAY_SOLUTION_DEFAULT)
+    pl.get_boolean_attrib(element, "overlay-solution", OVERLAY_SOLUTION_DEFAULT)
 
     toolbar: list = []  # List of tools as it will be sent to the client
     tool_data = {}  # ID-based lookup table for tools that is used internally
@@ -240,7 +240,7 @@ def _split_range(
         else:
             result.append(float(x))
     if len(result) != 2:
-        if not default_start:
+        if default_start is None:
             raise ValueError(
                 f"Invalid range: {xrange}. Ranges must contain two values separated by a comma."
             )
@@ -514,7 +514,7 @@ def _check_grader(
                 raise ValueError(
                     'The "mode" attribute of the "count" grading criterion must be "exact", "at-least", or "at-most".'
                 )
-            defaults["tolerance"] = 0
+            defaults["tolerance"] = 15
         case (
             "defined-in"
             | "undefined-in"
@@ -612,7 +612,7 @@ def _check_grader(
                         'The "match-function" grading criterion does not support the line, polygon, or horizontal/vertical line tools.'
                     )
             pl.get_boolean_attrib(grader_tag, "allow-undefined", False)
-            defaults["tolerance"] = 20
+            defaults["tolerance"] = 15
         case "less-than" | "greater-than":
             optional_attribs.extend([
                 "y",
@@ -950,7 +950,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
             data["format_errors"][name] = "Graph is blank."
             return
 
-    # validate that polygons have <= 20 vertices
+    # validate that polygons have <= 30 vertices
     # validate that spline-type objects with the same toolid don't overlap each other more than 15 px
     # TODO: Consider moving the second check into the grader since it might be useful to make it configurable for
     # each grading criterion. Arguably, drawing a non-function when a function is requested is an incorrect answer
@@ -972,7 +972,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
             continue
         if tool_data[toolid]["name"] == "polyline" and tool_data[toolid]["closed"]:
             for spline in gradeable[toolid]:
-                if ("spline" in spline and len(spline["spline"]) - 1) / 3 > 30:
+                if "spline" in spline and (len(spline["spline"]) - 1) / 3 > 30:
                     data["format_errors"][name] = (
                         "A drawn polygon/region exceeds the allowed number of vertices (max 30)."
                     )
@@ -1042,7 +1042,7 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
 
     # get the score, weight, feedback for each grader
     scores = []
-    weights = []
+    grader_weights = []
     all_feedback = []
     debug_messages = []
     num_correct = 0
@@ -1054,9 +1054,11 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
             ignore_score = True
         for grader in graders:
             # We grade all criteria (even if a previous stage failed)
-            score, weight, feedback = grade_submission(grader, data, name)
-            weights.append(weight)
-            if score == 1:
+            grader_score, grader_weight, grader_feedback = grade_submission(
+                grader, data, name
+            )
+            grader_weights.append(grader_weight)
+            if grader_score == 1:
                 if not ignore_score:
                     # Correct answers are only worth points if the previous stage has passed
                     scores.append(1)
@@ -1066,18 +1068,18 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
             else:
                 # Incorrect answers block later stages and also trigger feedback
                 scores.append(0)
-                all_feedback.append(feedback[0])
+                all_feedback.append(grader_feedback[0])
                 if debug:
-                    debug_messages += [feedback]
+                    debug_messages += [grader_feedback]
                 if stage != 0:
                     prev_stage_correct = False
 
-    total_weights = sum(weights)
+    total_weights = sum(grader_weights)
     if total_weights == 0:
         raise ValueError("Total weight of all grading criteria cannot be zero.")
     percentage = 1 / total_weights
     score = round(
-        sum(scores[i] * percentage * weights[i] for i in range(len(scores))), 2
+        sum(scores[i] * percentage * grader_weights[i] for i in range(len(scores))), 2
     )
 
     # Print feedback and potentially debug output (if the attribute is set)

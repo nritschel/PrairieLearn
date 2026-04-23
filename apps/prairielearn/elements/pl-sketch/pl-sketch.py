@@ -955,7 +955,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # TODO: Consider moving the second check into the grader since it might be useful to make it configurable for
     # each grading criterion. Arguably, drawing a non-function when a function is requested is an incorrect answer
     # and does not need to be flagged as invalid.
-    spline_based_tool_names = ["free-draw", "spline", "polyline"]
+    spline_based_tool_names = ["freeform", "spline", "polyline"]
     tool_data = data["params"][name]["tool_data"]
 
     # we don't want to check overlap if the graph is flipped for f(y) grading

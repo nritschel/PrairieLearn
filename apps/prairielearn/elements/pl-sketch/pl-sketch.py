@@ -962,7 +962,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     no_overlap_check = []
     for grader in data["params"][name]["graders"]:
         if "xyflip" in grader and grader["xyflip"] is True:
-            no_overlap_check += [tool["name"] for tool in grader["toolid"]]
+            no_overlap_check += [tool["id"] for tool in grader["toolid"]]
 
     for toolid in gradeable:
         if toolid not in tool_data or not isinstance(gradeable[toolid], list):
@@ -970,15 +970,17 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
                 f'Invalid data for tool "{toolid}" in submission.'
             )
             continue
-        tool_type = tool_data[toolid]["name"]
-        if tool_type == "polyline" and tool_data[toolid]["closed"]:
+        if tool_data[toolid]["name"] == "polyline" and tool_data[toolid]["closed"]:
             for spline in gradeable[toolid]:
                 if ("spline" in spline and len(spline["spline"]) - 1) / 3 > 30:
                     data["format_errors"][name] = (
                         "A drawn polygon/region exceeds the allowed number of vertices (max 30)."
                     )
                     break
-        elif tool_type in spline_based_tool_names and tool_type not in no_overlap_check:
+        elif (
+            tool_data[toolid]["name"] in spline_based_tool_names
+            and tool_data[toolid]["id"] not in no_overlap_check
+        ):
             if len(gradeable[toolid]) == 1:
                 continue
             # get min and max x values of each object and see if they overlap more than 5 px

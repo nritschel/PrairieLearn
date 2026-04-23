@@ -1,24 +1,47 @@
-window.SketchInput = function (id) {
+window.SketchInput = function (id, overlay_solution = false) {
   function prepareData() {
+    // Load SketchResponse
     const si = new window.sketchresponse.default(
       document.getElementById(id + '-si-container'),
       id,
       config,
     );
 
-    const overlayButton = document.getElementById(id + '-overlay-toggle');
-    if (overlayButton) {
-      overlayButton.addEventListener('click', function () {
-        const overlays = document.querySelectorAll(`#${id}-si-container .overlay`);
-        if (overlays.length > 0) {
-          overlays.forEach((overlay) => {
-            overlay.style.display = overlay.style.display === 'none' ? 'inherit' : 'none';
-          });
-          overlayButton.textContent =
-            overlayButton.textContent === 'Show Solution Overlay'
-              ? 'Hide Solution Overlay'
-              : 'Show Solution Overlay';
-        }
+    // Inject overlay toggle button into si-container if it is enabled
+    if (overlay_solution) {
+      si.messageBus.on('ready', function (_) {
+        const container = document.getElementById(id + '-si-container');
+        const buttonWrapper = document.createElement('div');
+        buttonWrapper.className = 'position-relative';
+        buttonWrapper.innerHTML = `
+        <button
+            type="button"
+            class="js-overlay-toggle btn btn-light border position-absolute translate-middle bottom-0 end-0 m-3"
+            id="${id}-overlay-toggle"
+            title="Toggle solution display"
+            data-bs-toggle="tooltip"
+            data-bs-placement="top"
+            aria-label="Toggle solution display"
+        >
+            <i class="bi bi-layers-half" aria-hidden="true"></i>
+        </button>
+      `;
+        container.append(buttonWrapper);
+
+        const overlayButton = document.getElementById(id + '-overlay-toggle');
+        overlayButton.addEventListener('click', function () {
+          const overlays = document.querySelectorAll(`#${id}-si-container .overlay`);
+          if (overlays.length > 0) {
+            overlays.forEach((overlay) => {
+              overlay.style.display = overlay.style.display === 'none' ? 'inherit' : 'none';
+            });
+            const icon = overlayButton.querySelector('i');
+            if (icon) {
+              icon.classList.toggle('bi-layers-half');
+              icon.classList.toggle('bi-layers-fill');
+            }
+          }
+        });
       });
     }
 

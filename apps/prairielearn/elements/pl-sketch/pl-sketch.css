@@ -6,3 +6,8 @@
   margin: 20px;
   padding: 20px;
 }
+
+.js-overlay-toggle {
+  width: 2rem;
+  height: 2rem;
+}

@@ -40,15 +40,6 @@
           <i class="fa fa-exclamation-triangle" aria-hidden="true"></i>
       </button>
       {{/format_error}}
-      {{#overlay_solution}}
-        <button
-            type="button"
-            class="btn btn-light border d-flex align-items-center"
-            id="{{id}}-overlay-toggle"
-        >
-            <span class="me-1">Hide Solution Overlay</span>
-        </button>
-      {{/overlay_solution}}
     </div>
     <div class="sketchresponse">
       {{! Base64-encoded config data for SketchResponse }}
@@ -60,7 +51,7 @@
       </div>
     </div>
     <script>
-      window.SketchInput('{{id}}', {{#readonly}}true{{/readonly}}{{^readonly}}false{{/readonly}})
+      window.SketchInput('{{id}}', {{#overlay_solution}}true{{/overlay_solution}}{{^overlay_solution}}false{{/overlay_solution}})
     </script>
   {{^read_only}}
     {{#scored}}

@@ -50,8 +50,8 @@ A more complete example combining multiple tools, initial drawings, and several 
 | ------------------ | ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `answers-name`     | string (required) | -        | Variable name to store data in. Note that this attribute has to be unique within a question, i.e., no value for this attribute should be repeated within a question.                                      |
 | `weight`           | integer           | 1        | Weight to use when computing a weighted average score over elements.                                                                                                                                      |
-| `x-range`          | string            | `"-5,5"` | x-range of the canvas as a comma-separated pair of numbers. A 10 pixel wide, ungraded margin is added around this range.                                                                                  |
-| `y-range`          | string            | `"-5,5"` | y-range of the canvas as a comma-separated pair of numbers. A 10 pixel wide, ungraded margin is added around this range.                                                                                  |
+| `x-range`          | string            | `"-5,5"` | x-range of the canvas as a comma-separated pair of numbers. A 10-pixel-wide, ungraded margin is added around this range.                                                                                  |
+| `y-range`          | string            | `"-5,5"` | y-range of the canvas as a comma-separated pair of numbers. A 10-pixel-wide, ungraded margin is added around this range.                                                                                  |
 | `width`            | integer           | 800      | Display width of the canvas in pixels. Note that the element is not responsive, so custom widths can cause display issues and should be used with care.                                                   |
 | `height`           | integer           | 450      | Display height of the canvas in pixels.                                                                                                                                                                   |
 | `read-only`        | boolean           | false    | If set to `true`, the graph is not editable and the top toolbar is removed. This setting can be used in combination with `pl-sketch-initial` (see below) to render drawings as static question materials. |
@@ -97,7 +97,7 @@ The element supports the following tool types with the default settings listed b
 
 ### **`free-draw`**
 
-Lines drawn in any shape using drag-and-release. Lines are slightly smoothened after drawing and can be moved and deleted, but not edited after drawing them.
+Lines drawn in any shape using drag-and-release. Lines are slightly smoothed after drawing and can be moved and deleted, but not edited after drawing them.
 
 **Defaults:**
 

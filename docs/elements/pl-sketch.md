@@ -9,6 +9,21 @@ Sketch curves and other mathematical objects (e.g., points, asymptotes, polygons
 
 ## Sample element
 
+A minimal question with one drawing tool, one grading criterion, and a sample solution:
+
+<!-- prettier-ignore -->
+```html title="question.html"
+  <pl-sketch answers-name="simple-sketch" x-range="-5,5" y-range="-5,5">
+    <pl-sketch-tool id="fd" type="free-draw"></pl-sketch-tool>
+    <pl-sketch-grade type="match-function" tool-id="fd" function="x**2"></pl-sketch-grade>
+    <pl-sketch-solution tool-id="fd" function="x**2"></pl-sketch-solution>
+  </pl-sketch>
+```
+
+Note that the grading and solution elements reference the same tool. The `pl-sketch-grade` element is used for grading, while the `pl-sketch-solution` element is used to render the sample solution.
+
+A more complete example combining multiple tools, initial drawings, and several grading criteria:
+
 ![Screenshot of the pl-sketch input](pl-sketch.png)
 
 <!-- prettier-ignore -->
@@ -28,10 +43,6 @@ Sketch curves and other mathematical objects (e.g., points, asymptotes, polygons
     <pl-sketch-solution tool-id="hl" coordinates="0"></pl-sketch-solution>
   </pl-sketch>
 ```
-
-### Accessibility
-
-Due to the highly graphical nature of this element, there are currently no viable keyboard controls or reasonable screen reader interaction available. To meet some accessibility needs, alternative versions of sketching questions will be necessary, for example to allow students to give textual descriptions rather than drawing.
 
 ## Customizations
 
@@ -54,10 +65,8 @@ To set up the element and to customize grading, four types of elements can be ne
 
 - `pl-sketch-tool` elements define drawing tools that are used to create sketches inside the canvas.
 - `pl-sketch-grade` elements define grading criteria for student submissions. Criteria typically refer to one or more specific drawing tools.
-- `pl-sketch-initial` elements define drawings that are already present in the initial canvas. Initial drawings always refer to a specific drawing tool.
-- `pl-sketch-solution` elements define sample solution drawings that are rendered in the answer panel canvas (and overlaid with submissions once the answer has been revealed). Solution drawings always refer to a specific drawing tool.
 
-### Defining drawing tools with `pl-sketch-tool`
+## Defining drawing tools with `pl-sketch-tool`
 
 Each drawing tool elements represents one kind of object that can be drawn onto the canvas. Each tool has a button in the element's toolbar (unless `read-only="true"` is set). Tools have a general type (e.g., line, point) that defines their drawing behavior and default settings. Multiple tools of the same type can be created and individually customized to, for example, allow students to sketch multiple functions in the same canvas, or mark different types of extrema of a function.
 
@@ -86,7 +95,7 @@ _Note that all attributes other than `type` are optional, but default values (ot
 
 The element supports the following tool types with the default settings listed below:
 
-#### **`free-draw`**
+### **`free-draw`**
 
 Lines drawn in any shape using drag-and-release. Lines are slightly smoothened after drawing and can be moved and deleted, but not edited after drawing them.
 
@@ -96,7 +105,7 @@ Lines drawn in any shape using drag-and-release. Lines are slightly smoothened a
 id="fd" label="Function f(x)" color="blue"
 ```
 
-#### **`point`**
+### **`point`**
 
 Points placed by clicking at a specific location in the canvas.
 
@@ -106,7 +115,7 @@ Points placed by clicking at a specific location in the canvas.
 id="pt" label="Point" color="black" size="15"
 ```
 
-#### **`horizontal-line`**
+### **`horizontal-line`**
 
 Horizontal lines that span the entire canvas (effectively marking a y-coordinate).
 
@@ -116,7 +125,7 @@ Horizontal lines that span the entire canvas (effectively marking a y-coordinate
 id="hl" label="Horizontal Line" color="dimgray" dash-style="dashdotted"
 ```
 
-#### **`vertical-line`**
+### **`vertical-line`**
 
 Vertical lines that span the entire canvas (effectively marking an x-coordinate).
 
@@ -126,7 +135,7 @@ Vertical lines that span the entire canvas (effectively marking an x-coordinate)
 id="vl" label="Vertical Line" color="dimgray" dash-style="dashdotted"
 ```
 
-#### **`line`**
+### **`line`**
 
 Straight lines that can be drawn between two points. Optional constraints can restrict length/direction and an optional arrowhead can distinguish the two endpoints.
 
@@ -137,7 +146,7 @@ id="line" label="Line" color="red" dash-style="solid" direction-constraint="none
 length-constraint="0" arrowhead="0"
 ```
 
-#### **`polyline`**
+### **`polyline`**
 
 Complex lines, each consisting of straight line segments. Each segment extends the line by another connected point. Pressing "Enter" or switching tools finishes a line. Points can be moved after the line has been finished.
 
@@ -147,7 +156,7 @@ Complex lines, each consisting of straight line segments. Each segment extends t
 id="pline" label="Polyline" color="orange" dash-style="solid"
 ```
 
-#### **`spline`**
+### **`spline`**
 
 Complex lines, each consisting of multiple line segments. Segments are curved to create a overall line. Each segment extends the line by another connected point. Pressing "Enter" or switching tools finishes a line. Points can be moved after the line has been finished.
 
@@ -157,7 +166,7 @@ Complex lines, each consisting of multiple line segments. Segments are curved to
 id="sp" label="Spline" color="purple"
 ```
 
-#### **`polygon`**
+### **`polygon`**
 
 Polygon shapes, each consisting of multiple line segments with connected endpoints. Each segment extends the line by another connected point, and the final connector of the endpoints is automatically inserted. The area of the polygon can be shaded. Pressing the "Enter" button or switching tools finishes a polygon. Points can be moved after the line has been finished.
 
@@ -166,6 +175,42 @@ Polygon shapes, each consisting of multiple line segments with connected endpoin
 ```html
 id="pg" label="Polygon" color="mediumseagreen" fill-color="mediumseagreen" fill-opacity="0.5"
 ```
+
+## Adding initial and solution drawings with `pl-sketch-initial` and `pl-sketch-solution`
+
+For both read-only elements and ones that can be edited by students, initial and solution drawings can be added to the canvas. Initial drawings are present when the question is initially rendered in the question panel, while solution drawings are present in the solution panel to show a possible sample solution. Note that the sample solution cannot be inferred from the grading criteria because the criteria might allow for a range of possible solutions.
+
+Initial and solution drawings refer to a tool that determines their type and styling. For initial drawings, if the tool has `read-only="true"` set, it does not appear in the toolbar and the added objects are fixed (e.g., as a given function that needs to be annotated). Otherwise, objects can be edited by students just like their own drawings.
+
+The following attributes apply to both initial and solution drawings:
+
+| Parameter     | Type   | Default | Description                                                                                                                                                                                                                                                           |
+| ------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tool-id`     | string | -       | `id` of the tool to be used for this drawing.                                                                                                                                                                                                                         |
+| `coordinates` | string | -       | Comma-separated list of coordinates (e.g., `-4.5`, `(1,2)`, or `(1,2),(3,4)`) to be used for the drawing. See below for details.                                                                                                                                      |
+| `function`    | string | -       | Symbolic function definition (see below) to be used to draw a `spline` or `free-draw` object. Only one of `coordinates` and `function` can be used.                                                                                                                   |
+| `x-range`     | string | `","`   | Interval for which the function definition should be plotted as a comma-separated pair of numbers, e.g. `"-3,1.5"`. Only applicable if `function` is used. Start and/or end of the range can be blank (e.g., `"-3,"` or `",-3"`) to extend to the edge of the canvas. |
+
+Note that the expected number and interpretation of coordinates depends on the type of tool that is referenced. The `vertical-line` and `horizontal-line` tools only require a single coordinate (`x` or `y`). The `point` tool expects a comma-separated coordinate pair `(x,y)`, while `line` needs 2 pairs (`(x1,y1),(x2,y2)`), and complex line tools or `polygon` need 2 or more coordinate pairs that represent the points connected by the line. Multiple tags can reference the same tool to create independent drawings (e.g., multiple points or disconnected lines).
+
+### Rendering symbolic functions with `pl-sketch-initial` and `pl-sketch-solution`
+
+In addition to drawing individual coordinates, `pl-sketch-initial` and `pl-sketch-solution` also support rendering a function based on a given symbolic definition. Functions can only be rendered using a `spline` or `free-draw` type tool, and are converted into a series of line fragments before being sent to the client, so the symbolic definition is not revealed to the student.
+
+For details on what types of symbolic expressions are supported, see the [Symbolic function definitions](#symbolic-function-definitions) section below. Note that functions are rendered as one continuous line, so for non-continuous functions, it might be necessary to split them into multiple continuous intervals to avoid visual artifacts. For example:
+
+```html
+<pl-sketch-initial tool-id="fd" function="1/x**3"></pl-sketch-initial>
+```
+
+should be defined as:
+
+```html
+<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="-5,0"></pl-sketch-initial>
+<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="0,5"></pl-sketch-initial>
+```
+
+to avoid the left and right hand side of the vertical asymptote being connected.
 
 ## Defining grading criteria with `pl-sketch-grade`
 
@@ -190,19 +235,132 @@ The following attributes can be used to customize any grading criterion, indepen
 
 Note that `free-draw`/`polyline`/`spline` drawings are treated as mathematical functions, so there can be at most one y-value for each x-coordinate. If there are multiple values drawn at the same x-coordinate, only the first one is considered for grading. Other tools, such as `polygon`, `point` and `line`, are not treated this way and the entire shape is considered for grading purposes.
 
-| Type of check      | Description                                                                                                                  | Supported tool types                       | Type-specific parameters                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `count`            | Compares the total count of all objects drawn with the specified tool(s) to a reference value.                               | All                                        | `count`: reference count used for the check. `mode`: `"exact"` (default), `"at-least"`, or `"at-most"`. `tolerance`: only applied if `x-range` is set; A pixel-based margin (default: 15) that is is added/removed (depending on `mode`) for both ends of the x-range. For all modes, either the count within `x-range` or the count after applying the tolerance margins needs to be correct.                                                                                              |
-| `match`            | Checks whether any objects drawn with the specified tools match (touch or intersect) a reference coordinate or point.        | All                                        | `x` (optional): reference x-coordinate. `y` (optional): reference y-coordinate. At least one of `x` or `y` must be defined. `tolerance`: allowed pixel distance between the reference and closest drawn point (default: 15). `endpoint` (optional; only for the `line` tool type): specifies which endpoint (`"start"`, `"end"`, or `"either"`) should match the reference. This check does not support `x-range`.                                                                          |
-| `defined-in`       | Checks whether all objects drawn with the specified tools combined cover the entire range of the reference x-interval.       | All but `horizontal-line` and `point`      | `tolerance`: Portion of the x-interval (in pixels) that a correct answer is allowed to skip (default: 20).                                                                                                                                                                                                                                                                                                                                                                                  |
-| `undefined-in`     | Checks whether none of the objects drawn with the specified tools combined are present anywhere in the reference x-interval. | All but `horizontal-line`                  | `tolerance`: Portion of x-interval (in pixels) that a correct answer is allowed to cover (default: 20).                                                                                                                                                                                                                                                                                                                                                                                     |
-| `less-than`        | Checks whether all objects drawn with the specified tools are always below a reference coordinate or function                | All but `vertical-line`                    | `y`: reference y-coordinate. `function`: reference function (see below for more details). Only `y` _or_ `function` can be set. `tolerance`: allowed pixel distance that drawn objects are allowed to reach above the reference (default: 15). `xy-flip`: If `true` (default: `false`), flip x-axis and y-axis (see below for details). `y-range`: replaces `x-range` if `xy-flip` is `true`.                                                                                                |
-| `greater-than`     | Checks whether all objects drawn with the specified tools are always above a reference coordinate or function                | All but `vertical-line`                    | `y`: reference y-coordinate. `function`: reference function (see below for more details). Only `y` _or_ `function` can be set. `tolerance`: allowed pixel distance that drawn objects are allowed to reach below the reference (default: 15). `xy-flip`: If `true` (default: `false`), flip x-axis and y-axis (see below for details). `y-range`: replaces `x-range` if `xy-flip` is `true`.                                                                                                |
-| `match-function`   | Checks whether all objects drawn are close to a reference function                                                           | `free-draw`, `point`, `polyline`, `spline` | `function`: reference function (see below for more details). `allow-undefined`: If `"false"` (default), the entire domain of the function (with some tolerance) must be covered with objects; otherwise, gaps are ignored. `"tolerance"`: allowed pixel distance that drawn objects are allowed to deviate from the reference (default: 15). `xy-flip`: If `true` (default: `false`), flip x-axis and y-axis (see below for details). `y-range`: replaces `x-range` if `xy-flip` is `true`. |
-| `monot-increasing` | Checks whether the drawn function is monotonically increasing.                                                               | `free-draw`, `line`, `polyline`, `spline`  | This check is performed by dividing each graded object individually into 100 equally sized intervals and comparing their end points. `tolerance`: how many segments per object are allowed to be undefined or decreasing (default: 5).                                                                                                                                                                                                                                                      |
-| `monot-decreasing` | Checks whether the drawn function is monotonically decreasing.                                                               | `free-draw`, `line`, `polyline`, `spline`  | This check is performed by dividing each graded object individually into 100 equally sized intervals and comparing their end points. `tolerance`: how many segments per object are allowed to be undefined or increasing (default: 5).                                                                                                                                                                                                                                                      |
-| `concave-up`       | Checks whether the drawn function is concave and upward-facing.                                                              | `free-draw`, `line`, `polyline`, `spline`  | This check is performed by dividing each graded object individually into 100 equally sized intervals and checking the shape of each one. Note that `line` and `polyline` objects are not considered to be concave, so they always fail this criterion. `tolerance`: how many segments per object are allowed to be undefined or not concave/upward-facing (default: 10).                                                                                                                    |
-| `concave-down`     | Checks whether the drawn function is concave and downward-facing.                                                            | `free-draw`, `line`, `polyline`, `spline`  | This check is performed by dividing each graded object individually into 100 equally sized intervals and checking the shape of each one. Note that `line` and `polyline` objects are not considered to be concave, so they always fail this criterion. `tolerance`: how many segments per object are allowed to be undefined or not concave/downward-facing (default: 10).                                                                                                                  |
+#### **`count`**
+
+Compares the total count of all objects drawn with the specified tool(s) to a reference value.
+
+**Supported tool types:** All
+
+| Parameter   | Type    | Default   | Description                                                                                                                                                                                                                                              |
+| ----------- | ------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `count`     | integer | -         | Reference count used for the check.                                                                                                                                                                                                                      |
+| `mode`      | string  | `"exact"` | One of `"exact"`, `"at-least"`, or `"at-most"`.                                                                                                                                                                                                          |
+| `tolerance` | integer | 15        | Only applied if `x-range` is set; a pixel-based margin that is added/removed (depending on `mode`) for both ends of the x-range. For all modes, either the count within `x-range` or the count after applying the tolerance margins needs to be correct. |
+
+#### **`match`**
+
+Checks whether any objects drawn with the specified tools match (touch or intersect) a reference coordinate or point. This check does not support `x-range`.
+
+**Supported tool types:** All
+
+| Parameter   | Type    | Default | Description                                                                                                   |
+| ----------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------- |
+| `x`         | float   | -       | Reference x-coordinate. At least one of `x` or `y` must be defined.                                           |
+| `y`         | float   | -       | Reference y-coordinate. At least one of `x` or `y` must be defined.                                           |
+| `tolerance` | integer | 15      | Allowed pixel distance between the reference and closest drawn point.                                         |
+| `endpoint`  | string  | -       | Only for the `line` tool type. Which endpoint (`"start"`, `"end"`, or `"either"`) should match the reference. |
+
+#### **`defined-in`**
+
+Checks whether all objects drawn with the specified tools combined cover the entire range of the reference x-interval.
+
+**Supported tool types:** All but `horizontal-line` and `point`
+
+| Parameter   | Type    | Default | Description                                                                     |
+| ----------- | ------- | ------- | ------------------------------------------------------------------------------- |
+| `tolerance` | integer | 20      | Portion of the x-interval (in pixels) that a correct answer is allowed to skip. |
+
+#### **`undefined-in`**
+
+Checks whether none of the objects drawn with the specified tools combined are present anywhere in the reference x-interval.
+
+**Supported tool types:** All but `horizontal-line`
+
+| Parameter   | Type    | Default | Description                                                                  |
+| ----------- | ------- | ------- | ---------------------------------------------------------------------------- |
+| `tolerance` | integer | 20      | Portion of x-interval (in pixels) that a correct answer is allowed to cover. |
+
+#### **`less-than`**
+
+Checks whether all objects drawn with the specified tools are always below a reference coordinate or function. Only `y` _or_ `function` can be set.
+
+**Supported tool types:** All but `vertical-line`
+
+| Parameter   | Type    | Default | Description                                                                                                                                                      |
+| ----------- | ------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `y`         | float   | -       | Reference y-coordinate.                                                                                                                                          |
+| `function`  | string  | -       | Reference function (see [Symbolic function definitions](#symbolic-function-definitions)).                                                                        |
+| `tolerance` | integer | 15      | Allowed pixel distance that drawn objects are allowed to reach above the reference.                                                                              |
+| `xy-flip`   | boolean | false   | If `true`, flip x-axis and y-axis (see below for details). When `true`, `less-than` should be interpreted as "left of" and refer to x-coordinates rather than y. |
+| `y-range`   | string  | -       | Replaces `x-range` when `xy-flip` is `true`.                                                                                                                     |
+
+#### **`greater-than`**
+
+Checks whether all objects drawn with the specified tools are always above a reference coordinate or function. Only `y` _or_ `function` can be set.
+
+**Supported tool types:** All but `vertical-line`
+
+| Parameter   | Type    | Default | Description                                                                                                                                                          |
+| ----------- | ------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `y`         | float   | -       | Reference y-coordinate.                                                                                                                                              |
+| `function`  | string  | -       | Reference function (see [Symbolic function definitions](#symbolic-function-definitions)).                                                                            |
+| `tolerance` | integer | 15      | Allowed pixel distance that drawn objects are allowed to reach below the reference.                                                                                  |
+| `xy-flip`   | boolean | false   | If `true`, flip x-axis and y-axis (see below for details). When `true`, `greater-than` should be interpreted as "right of" and refer to x-coordinates rather than y. |
+| `y-range`   | string  | -       | Replaces `x-range` when `xy-flip` is `true`.                                                                                                                         |
+
+#### **`match-function`**
+
+Checks whether all objects drawn are close to a reference function.
+
+**Supported tool types:** `free-draw`, `point`, `polyline`, `spline`
+
+| Parameter         | Type    | Default | Description                                                                                                                    |
+| ----------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `function`        | string  | -       | Reference function (see [Symbolic function definitions](#symbolic-function-definitions)).                                      |
+| `allow-undefined` | boolean | false   | If `false`, the entire domain of the function (with some tolerance) must be covered with objects; otherwise, gaps are ignored. |
+| `tolerance`       | integer | 15      | Allowed pixel distance that drawn objects are allowed to deviate from the reference.                                           |
+| `xy-flip`         | boolean | false   | If `true`, flip x-axis and y-axis (see below for details).                                                                     |
+| `y-range`         | string  | -       | Replaces `x-range` when `xy-flip` is `true`.                                                                                   |
+
+#### **`monot-increasing`**
+
+Checks whether the drawn function is monotonically increasing. This check is performed by dividing each graded object individually into 100 equally sized intervals and comparing their end points.
+
+**Supported tool types:** `free-draw`, `line`, `polyline`, `spline`
+
+| Parameter   | Type    | Default | Description                                                             |
+| ----------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `tolerance` | integer | 5       | How many segments per object are allowed to be undefined or decreasing. |
+
+#### **`monot-decreasing`**
+
+Checks whether the drawn function is monotonically decreasing. This check is performed by dividing each graded object individually into 100 equally sized intervals and comparing their end points.
+
+**Supported tool types:** `free-draw`, `line`, `polyline`, `spline`
+
+| Parameter   | Type    | Default | Description                                                             |
+| ----------- | ------- | ------- | ----------------------------------------------------------------------- |
+| `tolerance` | integer | 5       | How many segments per object are allowed to be undefined or increasing. |
+
+#### **`concave-up`**
+
+Checks whether the drawn function is concave and upward-facing. This check is performed by dividing each graded object individually into 100 equally sized intervals and checking the shape of each one. Note that `line` and `polyline` objects are not considered to be concave, so they always fail this criterion.
+
+**Supported tool types:** `free-draw`, `line`, `polyline`, `spline`
+
+| Parameter   | Type    | Default | Description                                                                            |
+| ----------- | ------- | ------- | -------------------------------------------------------------------------------------- |
+| `tolerance` | integer | 10      | How many segments per object are allowed to be undefined or not concave/upward-facing. |
+
+#### **`concave-down`**
+
+Checks whether the drawn function is concave and downward-facing. This check is performed by dividing each graded object individually into 100 equally sized intervals and checking the shape of each one. Note that `line` and `polyline` objects are not considered to be concave, so they always fail this criterion.
+
+**Supported tool types:** `free-draw`, `line`, `polyline`, `spline`
+
+| Parameter   | Type    | Default | Description                                                                              |
+| ----------- | ------- | ------- | ---------------------------------------------------------------------------------------- |
+| `tolerance` | integer | 10      | How many segments per object are allowed to be undefined or not concave/downward-facing. |
 
 ### Symbolic function definitions
 
@@ -220,41 +378,9 @@ If any grading criterion with a lower stage number than another criterion fails,
 
 Note that all criteria are still considered when determining achievable points, unless they are defined with `weight="0"`. For the previous example, the `defined-in` tag could be assigned `stage="1"` and `undefined-in` tag could be assigned `stage="2"`, so that students do not receive any points unless they define the function in the correct range.
 
-## Adding initial and solution drawings with `pl-sketch-initial` and `pl-sketch-solution`
+## Accessibility
 
-For both read-only elements and ones that can be edited by students, initial and solution drawings can be added to the canvas. Initial drawings are present when the question is initially rendered in the question panel, while solution drawings are present in the solution panel to show a possible sample solution. Note that the sample solution cannot be inferred from the grading criteria because the criteria might allow for a range of possible solutions.
-
-Initial and solution drawings refer to a tool that determines their type and styling. For initial drawings, if the tool has `read-only="true"` set, it does not appear in the toolbar and the added objects are fixed (e.g., as a given function that needs to be annotated). Otherwise, objects can be edited by students just like their own drawings.
-
-The following attributes apply to both initial and solution drawings:
-
-| Parameter     | Type   | Default | Description                                                                                                                                                                                                                                                           |
-| ------------- | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tool-id`     | string | -       | `id` of the tool to be used for this drawing.                                                                                                                                                                                                                         |
-| `coordinates` | string | -       | Comma-separated list of coordinates (e.g., `-4.5`, `(1,2)`, or `(1,2),(3,4)`) to be used for the drawing. See below for details.                                                                                                                                      |
-| `function`    | string | -       | Symbolic function definition (see below) to be used to draw a `spline` or `free-draw` object. Only one of `coordinates` and `function` can be used.                                                                                                                   |
-| `x-range`     | string | `","`   | Interval for which the function definition should be plotted as a comma-separated pair of numbers, e.g. `"-3,1.5"`. Only applicable if `function` is used. Start and/or end of the range can be blank (e.g., `"-3,"` or `",-3"`) to extend to the edge of the canvas. |
-
-Note that the expected number and interpretation of coordinates depends on the type of tool that is referenced. The `vertical-line` and `horizontal-line` tools only require a single coordinate (`x` or `y`). The `point` tool expects a comma-separated coordinate pair `(x,y)`, while `line` needs 2 pairs (`(x1,y1),(x2,y2)`), and complex line tools or `polygon` need 2 or more coordinate pairs that represent the points connected by the line. Multiple tags can reference the same tool to create independent drawings (e.g., multiple points or disconnected lines).
-
-### Rendering symbolic functions with `pl-sketch-initial` and `pl-sketch-solution`
-
-In addition to drawing individual coordinates, `pl-sketch-initial` and `pl-sketch-solution` also support rendering a function based on a given symbolic definition. Functions can only be rendered using a `spline` or `free-draw` type tool, and are converted into a series of line fragments before being sent to the client, so the symbolic definition is not revealed to the student.
-
-For details on what types of symbolic expressions are supported, see the relevant section in `pl-sketch-grade`. Note that functions are rendered as one continuous line, so for non-continuous functions, it might be necessary to split them into multiple continuous intervals to avoid visual artifacts. For example:
-
-```html
-<pl-sketch-initial tool-id="fd" function="1/x**3"></pl-sketch-initial>
-```
-
-should be defined as:
-
-```html
-<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="-5,0"></pl-sketch-initial>
-<pl-sketch-initial tool-id="fd" function="1/x**3" x-range="0,5"></pl-sketch-initial>
-```
-
-to avoid the left and right hand side of the vertical asymptote being connected.
+Due to the highly graphical nature of this element, there are currently no viable keyboard controls or reasonable screen reader interaction available. To meet some accessibility needs, alternative versions of sketching questions will be necessary, for example to allow students to give textual descriptions rather than drawing.
 
 ## Example implementations
 

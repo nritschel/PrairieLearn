@@ -7,7 +7,7 @@ Sketch curves and other mathematical objects (e.g., points, asymptotes, polygons
 - Is a sketched function always monotonically increasing?
 - Is the expected area of the canvas covered (by a polygon)?
 
-Note that this element is designed with a focus on mathematical curve sketches that can be auto-graded. For a more versatile freehand drawing element with manual grading, consider using [`pl-excalidraw`](pl-excalidraw.md). For auto-gradable drawings that do not include curves, consider using [`pl-drawing`](../pl-drawing/index.md).
+Note that this element is designed with a focus on mathematical curve sketches that can be auto-graded. For more versatile manually graded drawings, consider using [`pl-excalidraw`](../elements/pl-excalidraw.md). For auto-gradable drawings that do not include curves, consider using [`pl-drawing`](../pl-drawing/index.md).
 
 ## Sample element
 

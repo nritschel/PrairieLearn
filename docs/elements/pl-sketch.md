@@ -82,7 +82,7 @@ _Note that all attributes other than `type` are optional, but default values (ot
 | `size`                 | integer                                                                      | point                                | Diameter of drawn points (in pixels).                                                                                                                            |
 | `hollow`               | boolean                                                                      | point                                | Whether points are drawn hollow (`true`) or filled (`false`).                                                                                                    |
 | `fill-color`           | string                                                                       | polygon                              | Fill color for drawn polygons.                                                                                                                                   |
-| `fill-opacity`         | float                                                                        | polygon                              | Fill opacity (between 0 to 1) of drawn polygons.                                                                                                                 |
+| `opacity`              | float                                                                        | polygon                              | Fill opacity (between 0 to 1) of drawn polygons.                                                                                                                 |
 
 The element supports the following tool types with the default settings listed below:
 

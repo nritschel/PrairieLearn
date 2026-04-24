@@ -153,7 +153,7 @@ Complex lines, each consisting of straight line segments. Each segment extends t
 **Defaults:**
 
 ```html
-id="pline" label="Polyline" color="orange" dash-style="solid"
+id="pline" label="Function f(x)" color="orange"
 ```
 
 ### **`spline`**
@@ -163,7 +163,7 @@ Complex lines, each consisting of multiple line segments. Segments are curved to
 **Defaults:**
 
 ```html
-id="sp" label="Spline" color="purple"
+id="sp" label="Function f(x)" color="purple"
 ```
 
 ### **`polygon`**
@@ -173,7 +173,7 @@ Polygon shapes, each consisting of multiple line segments with connected endpoin
 **Defaults:**
 
 ```html
-id="pg" label="Polygon" color="mediumseagreen" fill-color="mediumseagreen" fill-opacity="0.5"
+id="pg" label="Polygon" color="mediumseagreen" fill-color="mediumseagreen" opacity="0.5"
 ```
 
 ## Adding initial and solution drawings with `pl-sketch-initial` and `pl-sketch-solution`

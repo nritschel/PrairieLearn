@@ -227,7 +227,7 @@ def count(
     config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
-    tolerance = grader["tolerance"] or 15
+    tolerance = grader["tolerance"]
     feedback = grader["feedback"] or "Incorrect number of elements used."
     tools_to_check = get_tools_to_check(grader, submission)
 

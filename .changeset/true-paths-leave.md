@@ -1,5 +1,5 @@
 ---
-'@prairielearn/eslint-plugin': patch
+'@prairielearn/eslint-config': patch
 ---
 
 update dependencies

@@ -495,7 +495,7 @@ def _check_tool(tool_tag: lxml.html.HtmlElement) -> SketchTool:
 
     if tool_params["readonly"] and tool_params["helper"]:
         raise ValueError('A tool cannot be set to be both a "helper" and "read-only".')
-    if tool_params["limit"] and tool_params["limit"] < 1:
+    if tool_params["limit"] is not None and tool_params["limit"] < 1:
         raise ValueError("A tool cannot have a limit of less than 1.")
     if tool_params["dashStyle"] and tool_params["dashStyle"] not in {
         "solid",

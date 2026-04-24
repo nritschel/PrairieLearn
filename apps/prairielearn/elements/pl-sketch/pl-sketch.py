@@ -4,7 +4,7 @@ import json
 import random
 import re
 import string
-from typing import Any
+from typing import Any, Literal, NotRequired, TypedDict, cast
 
 import chevron
 import lxml.html
@@ -19,6 +19,73 @@ from sketchresponse.types import (
     SketchTool,
 )
 from sketchresponse.utils import format_drawing, parse_function_string
+
+
+class _AxesLabel(TypedDict):
+    value: str
+    dx: int
+    dy: int
+
+
+class _AxesLabelColors(TypedDict):
+    xaxisLabel: str
+    yaxisLabel: str
+
+
+class _AxesLabelFontSize(TypedDict):
+    xaxisLabel: int
+    yaxisLabel: int
+
+
+class AxesPlugin(TypedDict):
+    name: Literal["axes"]
+    xaxisLabel: _AxesLabel
+    yaxisLabel: _AxesLabel
+    colors: _AxesLabelColors
+    fontSize: _AxesLabelFontSize
+
+
+class SketchGroup(TypedDict):
+    name: Literal["group"]
+    id: str
+    label: str
+    plugins: list[SketchTool]
+
+
+class OverlayTool(SketchTool):
+    overlay: bool
+
+
+ToolbarPlugin = SketchTool | AxesPlugin | SketchGroup | OverlayTool
+
+# lines are list[dict[str, float]], spline/freeform/polyline are list[list[dict[str, float]]]
+DrawingData = list[Any]
+
+
+class SketchClientConfig(TypedDict):
+    width: int
+    height: int
+    xrange: list[float]
+    yrange: list[float]
+    xscale: str
+    yscale: str
+    enforceBounds: bool
+    safetyBuffer: int
+    coordinates: str
+    plugins: list[ToolbarPlugin]
+    initialstate: dict[str, DrawingData]
+    readonly: NotRequired[bool]
+
+
+class SketchAnswerParams(TypedDict):
+    plugins: list[ToolbarPlugin]
+    tool_data: dict[str, SketchTool]
+    initial_state: dict[str, DrawingData]
+    solution_state: dict[str, DrawingData]
+    ranges: SketchCanvasSize
+    graders: list[SketchGrader]
+    config: SketchClientConfig
+
 
 WEIGHT_DEFAULT = 1
 XRANGE_DEFAULT = "-5,5"
@@ -55,9 +122,11 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     # Just validate this is actually boolean - we don't need the value here
     pl.get_boolean_attrib(element, "overlay-solution", OVERLAY_SOLUTION_DEFAULT)
 
-    toolbar: list = []  # List of tools as it will be sent to the client
-    tool_data = {}  # ID-based lookup table for tools that is used internally
-    tool_groups = {}
+    toolbar: list[ToolbarPlugin] = []  # List of tools as it will be sent to the client
+    tool_data: dict[
+        str, SketchTool
+    ] = {}  # ID-based lookup table for tools that is used internally
+    tool_groups: dict[str, list[SketchTool]] = {}
 
     # First pass on nested tags to get tool definitions
     # We will do grading criteria and initials later since these tags reference the tool IDs
@@ -72,7 +141,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
                 toolbar.append(tool)
             elif group not in tool_groups:
                 tool_groups[group] = [tool]
-                group_formatted = {
+                group_formatted: SketchGroup = {
                     "name": "group",
                     "id": group,
                     "label": group,
@@ -84,24 +153,30 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
     # Add default tool if no tools have been specified
     if len(tool_data) == 0:
-        fd = {
+        fd: SketchTool = {
             "name": "freeform",
             "id": "fd",
             "label": "Function f(x)",
             "color": "blue",
-        }
-        tool_data["fd"] = {
-            "name": "freeform",
-            "id": "fd",
-            "helper": False,
             "readonly": False,
-            "label": "Function f(x)",
+            "helper": False,
+            "limit": None,
             "group": None,
+            "dashStyle": None,
+            "directionConstraint": None,
+            "lengthConstraint": None,
+            "size": None,
+            "hollow": None,
+            "opacity": None,
+            "closed": None,
+            "fillColor": None,
+            "arrowHead": None,
         }
+        tool_data["fd"] = fd
         toolbar.append(fd)
 
     # Add axes/grid for the canvas (technically a "tool" on the client side)
-    axes_plugins = {
+    axes_plugins: AxesPlugin = {
         "name": "axes",
         "xaxisLabel": {"value": "x", "dx": 10, "dy": 10},
         "yaxisLabel": {
@@ -159,9 +234,9 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     )
 
     # Validate and set graders, initial and solution values
-    graders: list = []
-    initials: list = []
-    solutions: list = []
+    graders: list[SketchGrader] = []
+    initials: list[SketchDrawing] = []
+    solutions: list[SketchDrawing] = []
 
     for html_tag in element:
         if html_tag.tag == "pl-sketch-grade":
@@ -176,19 +251,19 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
 
     # Here we convert the data format into the client side representation that is grouped by tool
     initial_ids = {initial["toolid"] for initial in initials}
-    initial_state = {
+    initial_state: dict[str, DrawingData] = {
         initial_id: format_drawing(initials, tool_data[initial_id], ranges_config)
         for initial_id in initial_ids
     }
 
     # Repeating the same process for solution data, which effectively becomes the initial state of the answer panel
     solution_ids = {solution["toolid"] for solution in solutions}
-    solution_state = {
+    solution_state: dict[str, DrawingData] = {
         solution_id: format_drawing(solutions, tool_data[solution_id], ranges_config)
         for solution_id in solution_ids
     }
 
-    client_config = {
+    client_config: SketchClientConfig = {
         "width": ranges_config["width"],
         "height": ranges_config["height"],
         "xrange": [
@@ -209,7 +284,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
     }
 
     # Saving all processed data into a dictionary
-    data["params"][name] = {
+    params: SketchAnswerParams = {
         "plugins": toolbar,
         "tool_data": tool_data,
         "initial_state": initial_state,
@@ -218,6 +293,7 @@ def prepare(element_html: str, data: pl.QuestionData) -> None:
         "graders": graders,
         "config": client_config,
     }
+    data["params"][name] = params
 
 
 def _split_range(
@@ -796,8 +872,9 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     element = lxml.html.fragment_fromstring(element_html)
     name = pl.get_string_attrib(element, "answers-name")
 
-    config = copy.deepcopy(data["params"][name]["config"])
-    solution = data["params"][name]["solution_state"]
+    params: SketchAnswerParams = data["params"][name]
+    config: SketchClientConfig = copy.deepcopy(params["config"])
+    solution = params["solution_state"]
 
     submission = data["raw_submitted_answers"].get(
         name + "-sketchresponse-submission", None
@@ -832,7 +909,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         overlay_displayed = True
         for tool_id, drawings in solution.items():
             # We need to create a tool copy to be able to set up a different config
-            overlay_tool = dict(data["params"][name]["tool_data"][tool_id])
+            overlay_tool = cast(OverlayTool, dict(params["tool_data"][tool_id]))
             overlay_tool_id = f"{tool_id}-solution-overlay"
             overlay_tool["id"] = overlay_tool_id
             overlay_tool["readonly"] = True
@@ -840,8 +917,10 @@ def render(element_html: str, data: pl.QuestionData) -> str:
 
             # Plugins are rendered in order, so we want to insert solutions at the start (but after the axes, which are at position 0)
             config["plugins"].insert(1, overlay_tool)
-            config["initialstate"].setdefault(overlay_tool_id, [])
-            config["initialstate"][overlay_tool_id].extend(drawings)
+            existing = cast(
+                list[Any], config["initialstate"].setdefault(overlay_tool_id, [])
+            )
+            existing.extend(drawings)
 
     scored = False
     score = None
@@ -948,11 +1027,12 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
     # each grading criterion. Arguably, drawing a non-function when a function is requested is an incorrect answer
     # and does not need to be flagged as invalid.
     spline_based_tool_names = ["freeform", "spline", "polyline"]
-    tool_data = data["params"][name]["tool_data"]
+    params: SketchAnswerParams = data["params"][name]
+    tool_data = params["tool_data"]
 
     # we don't want to check overlap if the graph is flipped for f(y) grading
     no_overlap_check = []
-    for grader in data["params"][name]["graders"]:
+    for grader in params["graders"]:
         if "xyflip" in grader and grader["xyflip"] is True:
             no_overlap_check += [tool["id"] for tool in grader["toolid"]]
 
@@ -1016,13 +1096,14 @@ def grade(element_html: str, data: pl.QuestionData) -> None:
 
 def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> PartialScore:
     """Grade submissions using staged grading logic."""
-    graders = data["params"][name]["graders"]
+    params: SketchAnswerParams = data["params"][name]
+    graders = params["graders"]
 
     if len(graders) == 0:
         return {
             "score": 1,
             "weight": weight,
-            "feedback": [{"correct": True, "fb": "Correct!"}],
+            "feedback": [{"correct": True, "feedback_text": "Correct!"}],
         }
 
     graders = sorted(graders, key=lambda grader: grader["stage"])
@@ -1077,10 +1158,10 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
     # Print feedback and potentially debug output (if the attribute is set)
     feedback_out = []
     if len(all_feedback) == 0:
-        feedback_out += [{"correct": True, "fb": "Correct!"}]
+        feedback_out += [{"correct": True, "feedback_text": "Correct!"}]
     elif not debug:
         feedback_out += [
-            {"correct": False, "fb": feedback}
+            {"correct": False, "feedback_text": feedback}
             for feedback in all_feedback
             if feedback != ""
         ]
@@ -1088,7 +1169,7 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
         feedback_out += [
             {
                 "correct": False,
-                "fb": debug[0],
+                "feedback_text": debug[0],
                 "debug_mode": len(debug) > 1,
                 "debug": [{"message": m} for m in debug[1:]],
             }
@@ -1114,7 +1195,8 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
     key = name + "-sketchresponse-submission"
     weight = pl.get_integer_attrib(element, "weight", WEIGHT_DEFAULT)
     result = data["test_type"]
-    solution_state = data["params"][name]["solution_state"]
+    params: SketchAnswerParams = data["params"][name]
+    solution_state = params["solution_state"]
 
     # If no solution is defined, we can't generate correct/incorrect submissions, so test invalid instead
     if result == "invalid" or (len(solution_state) == 0 and not allow_blank):
@@ -1124,9 +1206,9 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
         ).decode("utf-8")
         return
 
-    tool_data = data["params"][name]["tool_data"]
-    canvas_width = data["params"][name]["config"]["width"]
-    canvas_height = data["params"][name]["config"]["height"]
+    tool_data = params["tool_data"]
+    canvas_width = params["config"]["width"]
+    canvas_height = params["config"]["height"]
 
     gradeable = _solution_to_gradeable(
         solution_state, tool_data, canvas_width, canvas_height
@@ -1153,7 +1235,7 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
 
 
 def _solution_to_gradeable(
-    solution_state: dict[str, Any],
+    solution_state: dict[str, DrawingData],
     tool_data: dict[str, SketchTool],
     canvas_width: int,
     canvas_height: int,

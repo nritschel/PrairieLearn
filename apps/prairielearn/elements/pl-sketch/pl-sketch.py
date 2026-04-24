@@ -609,14 +609,14 @@ def _check_grader(
                     )
                 if tool["name"] == "point" and grader_type != "undefined-in":
                     raise ValueError(
-                        f'The "{grader_type}" grading criterion does not support the point or horizontal line tools.'
+                        f'The "{grader_type}" grading criterion does not support the point tool.'
                     )
                 if grader_type not in {"defined-in", "undefined-in"} and (
                     (tool["name"] == "polyline" and tool["closed"])
                     or tool["name"] == "vertical-line"
                 ):
                     raise ValueError(
-                        f'The "{grader_type}" grading criterion does not support the point, polygon, or horizontal/vertical line tools.'
+                        f'The "{grader_type}" grading criterion does not support the polygon or vertical line tools.'
                     )
 
             if grader_type.startswith("concave"):
@@ -1064,21 +1064,20 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
                 for spline in gradeable[toolid]
             ]
             ranges = sorted(ranges, key=lambda rg: rg[0])
+            overlap_tolerance = 5
             for i in range(len(ranges) - 1):
-                total_overlap = 0
-                if ranges[i + 1][0] < ranges[i][1]:
-                    total_overlap += (
-                        min(ranges[i][1], ranges[i + 1][1]) - ranges[i + 1][0]
-                    )
-                overlap_tolerance = 5
-                if total_overlap > overlap_tolerance:
+                if ranges[i + 1][0] >= ranges[i][1]:
+                    continue
+                overlap = min(ranges[i][1], ranges[i + 1][1]) - ranges[i + 1][0]
+                if overlap > overlap_tolerance:
+                    label = tool_data[toolid]["label"]
+                    assert label is not None  # always set by _check_tool
                     data["format_errors"][name] = (
-                        'Multiple "'
-                        + tool_data[toolid]["label"]
-                        + (
-                            '" lines are defined in the same range. These lines are interpreted as functions, and only one y-value can exist for any x-coordinate.'
-                        )
+                        f'Multiple "{label}" lines are defined in the same range. '
+                        "These lines are interpreted as functions, and only one "
+                        "y-value can exist for any x-coordinate."
                     )
+                    break
 
 
 def grade(element_html: str, data: pl.QuestionData) -> None:
@@ -1223,15 +1222,16 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
     ).decode("utf-8")
 
     # Setting submitted_answers because it is needed for invoking grading below
-    data.setdefault("submitted_answers", {})[key] = data["raw_submitted_answers"][key]
+    submitted_answers = data.setdefault("submitted_answers", {})
+    submitted_answers[key] = data["raw_submitted_answers"][key]
 
     # Determine expected grading result by actually running the grading logic
     # Note that depending on the grading criteria and provided solution, it is both possible that the incorrect
     # submission gets some (or all) points, and that the supposedly correct solution gets less than full points
     data["partial_scores"][name] = _grade_with_staging(name, data, weight)
 
-    # Removing submitted_answers since we are not actually allowed to set it in test()
-    data.pop("submitted_answers")
+    # Remove only the key we added, since we are not allowed to set submitted_answers in test()
+    submitted_answers.pop(key, None)
 
 
 def _solution_to_gradeable(

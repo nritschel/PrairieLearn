@@ -175,14 +175,16 @@ def match_fun(
     )
 
     if grader["xyflip"]:
-        grader["xrange"] = grader["yrange"]
+        xrange = grader["yrange"]
         submission, config = flip_grader_data(submission, config)
+    else:
+        xrange = grader["xrange"]
 
     # This should not happen if the grader was validated correctly
-    if grader["xrange"] is None or grader["fun"] is None:
+    if xrange is None or grader["fun"] is None:
         raise ValueError("Encountered function grader without required parameters")
 
-    x1, x2 = grader["xrange"]
+    x1, x2 = xrange
     func = parse_function_string(grader["fun"])
 
     debug = grader["debug"]
@@ -662,15 +664,17 @@ def check_ltgt(
     )
 
     if grader["xyflip"]:
-        grader["xrange"] = grader["yrange"]
+        xrange = grader["yrange"]
         submission, config = flip_grader_data(submission, config)
+    else:
+        xrange = grader["xrange"]
 
-    if grader["xrange"] is None or (grader["fun"] is None and grader["y"] is None):
+    if xrange is None or (grader["fun"] is None and grader["y"] is None):
         raise ValueError(
             "Encountered less/greater than grader without required parameters"
         )
 
-    x1, x2 = grader["xrange"]
+    x1, x2 = xrange
 
     debug = grader["debug"]
     debug_message = []

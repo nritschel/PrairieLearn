@@ -844,6 +844,9 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     scored = False
     score = None
     feedback = None
+    score_class = None
+    score_icon = None
+    alert_class = None
     if name in data["partial_scores"]:
         scored = True
         score = data["partial_scores"][name]["score"]
@@ -851,64 +854,50 @@ def render(element_html: str, data: pl.QuestionData) -> str:
             score = round(float(score) * 100)
         feedback = data["partial_scores"][name].get("feedback", "")
 
-    # For formatting the badges
-    all_correct = score == 100
-    all_incorrect = score == 0
+        if score == 100:
+            score_class = alert_class = "success"
+            score_icon = "fa-check-circle"
+        elif score == 0:
+            score_class = alert_class = "danger"
+            score_icon = "fa-times-circle"
+        else:
+            score_class = alert_class = "warning"
+
+    # Each SketchResponse instance needs a unique ID, but only the question panel ID
+    # matters because it gets parsed on submission.
+    random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
+
+    scoring_params = {
+        "scored": scored,
+        "score": score,
+        "feedback": feedback,
+        "score_class": score_class,
+        "score_icon": score_icon,
+        "alert_class": alert_class,
+        "format_error": data["format_errors"].get(name, None),
+        "read_only": read_only,
+    }
 
     if data["panel"] == "question":
         if read_only or not data["editable"]:
             config["readonly"] = True
-        html_params = {
-            "id": name,
-            "question": True,
-            "config": base64.b64encode(json.dumps(config).encode("utf-8")).decode(
-                "utf-8"
-            ),
-            "scored": scored,
-            "score": score,
-            "feedback": feedback,
-            "all_correct": all_correct,
-            "all_incorrect": all_incorrect,
-            "format_error": data["format_errors"].get(name, None),
-            "read_only": read_only,
-            "overlay_solution": overlay_displayed,
-        }
+        html_params = {"id": name, **scoring_params}
     elif data["panel"] == "submission":
-        # Using a random ID here as each SketchResponse instance needs a unique ID, and only the question panel ID
-        # matters because it gets parsed on submission. All other panel IDs don't matter as long as they are unique.
         config["readonly"] = True
-
-        random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
-        html_params = {
-            "id": random_id,
-            "submission": True,
-            "config": base64.b64encode(json.dumps(config).encode("utf-8")).decode(
-                "utf-8"
-            ),
-            "scored": scored,
-            "score": score,
-            "feedback": feedback,
-            "all_correct": all_correct,
-            "all_incorrect": all_incorrect,
-            "format_error": data["format_errors"].get(name, None),
-            "read_only": read_only,
-            "overlay_solution": overlay_displayed,
-        }
+        html_params = {"id": random_id, **scoring_params}
     elif len(solution) > 0:  # answer panel (has solution to display)
         config["initialstate"] = solution
         config["readonly"] = True
-        random_id = "".join(random.choice(string.ascii_lowercase) for _ in range(15))
-        html_params = {
-            "id": random_id,
-            "answer": True,
-            "config": base64.b64encode(json.dumps(config).encode("utf-8")).decode(
-                "utf-8"
-            ),
-        }
+        html_params = {"id": random_id, "read_only": True}
     else:  # answer panel (no solution to display)
-        html_params = {
-            "no_answer": True,
-        }
+        html_params = {"no_answer": True}
+
+    if not html_params.get("no_answer"):
+        html_params["config"] = base64.b64encode(
+            json.dumps(config).encode("utf-8")
+        ).decode("utf-8")
+        html_params["overlay_solution"] = json.dumps(overlay_displayed)
+
     with open("pl-sketch.mustache") as f:
         return chevron.render(f, html_params).strip()
 

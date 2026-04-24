@@ -1168,12 +1168,12 @@ def _grade_with_staging(name: str, data: pl.QuestionData, weight: int) -> Partia
         feedback_out += [
             {
                 "correct": False,
-                "feedback_text": debug[0],
-                "debug_mode": len(debug) > 1,
-                "debug": [{"message": m} for m in debug[1:]],
+                "feedback_text": debug_message[0],
+                "debug_mode": len(debug_message) > 1,
+                "debug": [{"message": m} for m in debug_message[1:]],
             }
-            for debug in debug_messages
-            if debug[0] != ""
+            for debug_message in debug_messages
+            if debug_message[0] != ""
         ]
     return {
         "score": score,

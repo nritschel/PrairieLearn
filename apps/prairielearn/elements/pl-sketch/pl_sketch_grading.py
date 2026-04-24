@@ -240,6 +240,21 @@ def count(
     debug = grader["debug"]
     debug_message = []
 
+    # Calculate the total count across all tools for each tolerance variant
+    def get_total_count_in_bound(x1_val: float, x2_val: float) -> int:
+        """Sum the counts of all tools within the given x range."""
+        total = 0
+        for toolid in tools_to_check:
+            total += get_num_in_bound_occurrences(
+                toolid,
+                tool_dict,
+                submission,
+                config,
+                x1_val,
+                x2_val,
+            )
+        return total
+
     correct = True
     if len(tools_to_check) == 0 and (
         mode != "at-most" and grader["count"] != 0
@@ -247,70 +262,49 @@ def count(
         correct = False
         if debug:
             debug_message.append("No submission found.")
-    for toolid in tools_to_check:
+    elif len(tools_to_check) > 0:
         if mode == "exact":
             # since count is so specific, we want to try with both kinds of tolerances, and without any tolerance.
-            num_a = get_num_in_bound_occurrences(
-                toolid,
-                tool_dict,
-                submission,
-                config,
+            total_a = get_total_count_in_bound(
                 min(x1 - g_tol, x2 + g_tol),
                 max(x1 - g_tol, x2 + g_tol),
             )
-            num_b = get_num_in_bound_occurrences(
-                toolid,
-                tool_dict,
-                submission,
-                config,
+            total_b = get_total_count_in_bound(
                 min(x1 + g_tol, x2 - g_tol),
                 max(x1 + g_tol, x2 - g_tol),
             )
-            num_c = get_num_in_bound_occurrences(
-                toolid, tool_dict, submission, config, x1, x2
-            )
-            if grader["count"] not in (num_a, num_b, num_c):
+            total_c = get_total_count_in_bound(x1, x2)
+            if grader["count"] not in (total_a, total_b, total_c):
                 correct = False
                 if debug:
                     debug_message.extend((
-                        f"Found counts: {num_a}, {num_b}, {num_c} with xrange expanded by {tolerance} pixels, shrunk by {tolerance} pixels, and kept the same, respectively.",
+                        f"Found counts: {total_a}, {total_b}, {total_c} with xrange expanded by {tolerance} pixels, shrunk by {tolerance} pixels, and kept the same, respectively.",
                         f"Required exactly {grader['count']}.",
                     ))
-                break
         elif mode == "at-least":
-            num = get_num_in_bound_occurrences(
-                toolid,
-                tool_dict,
-                submission,
-                config,
+            total = get_total_count_in_bound(
                 min(x1 - g_tol, x2 + g_tol),
                 max(x1 - g_tol, x2 + g_tol),
             )
-            if num < grader["count"]:
+            if total < grader["count"]:
                 correct = False
                 if debug:
                     debug_message.extend((
-                        f"Found count: {num} with xrange expanded by {tolerance} pixels.",
+                        f"Found count: {total} with xrange expanded by {tolerance} pixels.",
                         f"Required at least {grader['count']}.",
                     ))
-                break
         else:
-            num = get_num_in_bound_occurrences(
-                toolid,
-                tool_dict,
-                submission,
-                config,
+            total = get_total_count_in_bound(
                 min(x1 + g_tol, x2 - g_tol),
                 max(x1 + g_tol, x2 - g_tol),
             )
-            if num > grader["count"]:
+            if total > grader["count"]:
                 correct = False
                 if debug:
                     debug_message.extend((
-                        f"Found count: {num} with xrange shrunk by {tolerance} pixels.",
+                        f"Found count: {total} with xrange shrunk by {tolerance} pixels.",
                         f"Required at most {grader['count']}.",
                     ))
-                break
 
     score = 1 if correct else 0
     feedback = [""] if correct else [feedback, *debug_message]

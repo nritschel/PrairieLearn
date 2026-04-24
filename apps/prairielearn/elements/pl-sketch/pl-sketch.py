@@ -1004,9 +1004,52 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
         try:
             submission_parsed = json.loads(base64.b64decode(submission).decode("utf-8"))
             gradeable = submission_parsed["gradeable"]
-            assert isinstance(gradeable, dict)
-        except Exception:
-            data["format_errors"][name] = "Invalid or corrupted submission data."
+
+            # Validate the submission data format here to avoid type or key errors later on
+            if not isinstance(gradeable, dict):
+                raise TypeError("gradeable must be a dictionary")
+            for tool_id, items in gradeable.items():
+                if not isinstance(items, list):
+                    raise TypeError(f"gradeable[{tool_id}] must be a list")
+                for idx, item in enumerate(items):
+                    if not isinstance(item, dict):
+                        raise TypeError(
+                            f"gradeable[{tool_id}][{idx}] must be a dictionary"
+                        )
+                    has_spline = "spline" in item
+                    has_point = "point" in item
+                    if not has_spline and not has_point:
+                        raise ValueError(
+                            f"gradeable[{tool_id}][{idx}] must have either 'spline' or 'point' key"
+                        )
+                    if has_spline:
+                        if not isinstance(item["spline"], list):
+                            raise TypeError(
+                                f"gradeable[{tool_id}][{idx}]['spline'] must be a list"
+                            )
+                        for j, coord in enumerate(item["spline"]):
+                            if not isinstance(coord, list) or len(coord) != 2:
+                                raise TypeError(
+                                    f"gradeable[{tool_id}][{idx}]['spline'][{j}] must be a [x, y] pair"
+                                )
+                            if not all(isinstance(c, (int, float)) for c in coord):
+                                raise TypeError(
+                                    f"gradeable[{tool_id}][{idx}]['spline'][{j}] must contain numeric values"
+                                )
+                    if has_point:
+                        if (
+                            not isinstance(item["point"], list)
+                            or len(item["point"]) != 2
+                        ):
+                            raise TypeError(
+                                f"gradeable[{tool_id}][{idx}]['point'] must be a [x, y] pair"
+                            )
+                        if not all(isinstance(c, (int, float)) for c in item["point"]):
+                            raise TypeError(
+                                f"gradeable[{tool_id}][{idx}]['point'] must contain numeric values"
+                            )
+        except Exception as err:
+            data["format_errors"][name] = f"Invalid or corrupted submission data: {err}"
             return
     else:
         data["format_errors"][name] = "No graph has been submitted."
@@ -1040,7 +1083,7 @@ def parse(element_html: str, data: pl.QuestionData) -> None:
             no_overlap_check += [tool["id"] for tool in grader["toolid"]]
 
     for toolid in gradeable:
-        if toolid not in tool_data or not isinstance(gradeable[toolid], list):
+        if toolid not in tool_data:
             data["format_errors"][name] = (
                 f'Invalid data for tool "{toolid}" in submission.'
             )

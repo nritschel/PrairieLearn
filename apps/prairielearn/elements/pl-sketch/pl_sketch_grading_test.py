@@ -344,8 +344,6 @@ def test_concave_down(
         (pg_data, pg_tool, 0, 9, 10),
         (ln_data, ln_tool, 1, 2, 3),
         (ln_data, ln_tool, 0, 1, 2),
-        (hl_data, hl_tool, 1, 2, 3),
-        (hl_data, hl_tool, 1, 0, 10),
     ],
 )
 def test_defined_in(
@@ -380,12 +378,9 @@ def test_defined_in(
         (ln_data, ln_tool, 1, 0.5, 0.5),
         (ln_data, ln_tool, 0, 2, 2.5),
         (ln_data, ln_tool, 1, 0.25, 0.25),
-        (hl_data, hl_tool, 0, 2, 3),
-        (hl_data, hl_tool, 0, 0, 10),
-        (hl_data, hl_tool, 1, 1, 1),
         (vl_data, vl_tool, 1, 1, 2),
         (vl_data, vl_tool, 1, 2, 2),
-        (vl_data, vl_tool, 1, 1, 5),
+        (vl_data, vl_tool, 0, 1, 5),
     ],
 )
 def test_undefined_in(

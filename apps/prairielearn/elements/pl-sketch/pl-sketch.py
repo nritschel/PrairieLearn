@@ -612,9 +612,12 @@ def _check_grader(
                         f'The "{grader_type}" grading criterion does not support the point tool.'
                     )
                 if grader_type not in {"defined-in", "undefined-in"} and (
-                    (tool["name"] == "polyline" and tool["closed"])
-                    or tool["name"] == "vertical-line"
+                    tool["name"] == "polyline" and tool["closed"]
                 ):
+                    raise ValueError(
+                        f'The "{grader_type}" grading criterion does not support the polygon tool.'
+                    )
+                if grader_type != "undefined-in" and tool["name"] == "vertical-line":
                     raise ValueError(
                         f'The "{grader_type}" grading criterion does not support the polygon or vertical line tools.'
                     )

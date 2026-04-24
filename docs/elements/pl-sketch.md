@@ -266,7 +266,7 @@ Checks whether any objects drawn with the specified tools match (touch or inters
 
 Checks whether all objects drawn with the specified tools combined cover the entire range of the reference x-interval.
 
-**Supported tool types:** All but `horizontal-line` and `point`
+**Supported tool types:** All but `horizontal-line`, `vertical-line`, and `point`
 
 | Parameter   | Type    | Default | Description                                                                     |
 | ----------- | ------- | ------- | ------------------------------------------------------------------------------- |

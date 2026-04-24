@@ -531,7 +531,7 @@ def defined_in(
     tools_to_check = get_tools_to_check(
         grader,
         submission,
-        not_allowed=["vertical-line", "point"],
+        not_allowed=["horizontal-line", "vertical-line", "point"],
     )
 
     if grader["xrange"] is None:
@@ -556,10 +556,6 @@ def defined_in(
             tool_grader = Polygon.Polygons(grader, submission, config, toolid)
         elif tool_used in gf_tools:
             tool_grader = GradeableFunction.GradeableFunction(
-                grader, submission, config, toolid
-            )
-        elif tool_used == "horizontal-line":
-            tool_grader = Asymptote.HorizontalAsymptotes(
                 grader, submission, config, toolid
             )
         elif tool_used == "line-segment":
@@ -600,7 +596,7 @@ def undefined_in(
     tools_to_check = get_tools_to_check(
         grader,
         submission,
-        not_allowed=["vertical-line"],
+        not_allowed=["horizontal-line"],
     )
 
     if grader["xrange"] is None:

@@ -4,6 +4,7 @@ import json
 import random
 import re
 import string
+from typing import Any
 
 import chevron
 import lxml.html
@@ -13,6 +14,7 @@ from prairielearn.question_utils import PartialScore
 from sketchresponse.types import (
     SketchCanvasSize,
     SketchDrawing,
+    SketchGradeableData,
     SketchGrader,
     SketchTool,
 )
@@ -878,6 +880,7 @@ def render(element_html: str, data: pl.QuestionData) -> str:
         "read_only": read_only,
     }
 
+    html_params: dict[str, Any]
     if data["panel"] == "question":
         if read_only or not data["editable"]:
             config["readonly"] = True
@@ -1150,13 +1153,13 @@ def test(element_html: str, data: pl.ElementTestData) -> None:
 
 
 def _solution_to_gradeable(
-    solution_state: dict,
+    solution_state: dict[str, Any],
     tool_data: dict[str, SketchTool],
     canvas_width: int,
     canvas_height: int,
-) -> dict:
+) -> SketchGradeableData:
     """Convert solution_state (formatted for rendering) to gradeable submission format."""
-    gradeable: dict = {}
+    gradeable: SketchGradeableData = {}
 
     for tool_id, drawings in solution_state.items():
         tool_name = tool_data[tool_id]["name"]
@@ -1222,7 +1225,9 @@ def _solution_to_gradeable(
     return gradeable
 
 
-def _mutate_gradeable(gradeable: dict, offset: float = 200) -> dict:
+def _mutate_gradeable(
+    gradeable: SketchGradeableData, offset: float = 200
+) -> SketchGradeableData:
     """Mutate gradeable data to produce an incorrect submission.
 
     Applies two transformations to break as many grader types as possible:

@@ -9,7 +9,12 @@ from sketchresponse.grader_lib import (
     MultiFunction,
     Polygon,
 )
-from sketchresponse.types import SketchGrader, SketchTool
+from sketchresponse.types import (
+    SketchConfig,
+    SketchGrader,
+    SketchSubmission,
+    SketchTool,
+)
 from sketchresponse.utils import (
     flip_grader_data,
     get_coverage_length_px,
@@ -23,8 +28,8 @@ from sketchresponse.utils import (
 
 def grade_answer(
     grader: SketchGrader,
-    submitted_answer: dict,
-    config: dict,
+    submitted_answer: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     """Grade a single answer against a grading criterion.
@@ -81,8 +86,8 @@ def grade_submission(
 
 def match(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     x, y = grader["x"], grader["y"]
@@ -122,11 +127,13 @@ def match(
                     x=x, y=y, tolerance=tolerance
                 )  # Note: also has x tolerance
         elif tool_used == "vertical-line":
+            assert x is not None  # validated in prepare
             tool_grader = Asymptote.VerticalAsymptotes(
                 grader, submission, config, toolid
             )
             correct = tool_grader.has_asym_at_value(x, tolerance=tolerance)
         elif tool_used == "horizontal-line":
+            assert y is not None  # validated in prepare
             tool_grader = Asymptote.HorizontalAsymptotes(
                 grader, submission, config, toolid
             )
@@ -134,6 +141,8 @@ def match(
         elif tool_used == "line-segment":
             tool_grader = LineSegment.LineSegments(grader, submission, config, toolid)
             if grader["endpoint"]:
+                assert x is not None
+                assert y is not None
                 correct = tool_grader.check_eps(
                     point=[x, y], mode=grader["endpoint"], tolerance=tolerance
                 )
@@ -155,8 +164,8 @@ def match(
 
 def match_fun(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     tolerance = grader["tolerance"]
@@ -212,8 +221,8 @@ def match_fun(
 
 def count(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     tolerance = grader["tolerance"] or 15
@@ -309,8 +318,8 @@ def count(
 
 def monot_increasing(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_monot_change(grader, submission, config, tool_dict, increasing=True)
@@ -318,8 +327,8 @@ def monot_increasing(
 
 def monot_decreasing(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_monot_change(grader, submission, config, tool_dict, increasing=False)
@@ -328,8 +337,8 @@ def monot_decreasing(
 # Function used for both monot increasing and decreasing
 def check_monot_change(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
     increasing: bool,
 ) -> tuple[float, int, list[str]]:
@@ -396,8 +405,8 @@ def check_monot_change(
 
 def concave_up(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_concavity(grader, submission, config, tool_dict, conc_up=True)
@@ -405,8 +414,8 @@ def concave_up(
 
 def concave_down(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_concavity(grader, submission, config, tool_dict, conc_up=False)
@@ -415,8 +424,8 @@ def concave_down(
 # Function used for both upward and downward concavity
 def check_concavity(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
     conc_up: bool,
 ) -> tuple[float, int, list[str]]:
@@ -510,8 +519,8 @@ def check_concavity(
 
 def defined_in(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     feedback = (
@@ -578,8 +587,8 @@ def defined_in(
 
 def undefined_in(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     feedback = (
@@ -617,8 +626,8 @@ def undefined_in(
 
 def greater_than(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_ltgt(grader, submission, config, tool_dict, greater=True)
@@ -626,8 +635,8 @@ def greater_than(
 
 def less_than(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
 ) -> tuple[float, int, list[str]]:
     return check_ltgt(grader, submission, config, tool_dict, greater=False)
@@ -636,8 +645,8 @@ def less_than(
 # used for both less than and greater than y
 def check_ltgt(
     grader: SketchGrader,
-    submission: dict,
-    config: dict,
+    submission: SketchSubmission,
+    config: SketchConfig,
     tool_dict: dict[str, SketchTool],
     greater: bool,
 ) -> tuple[float, int, list[str]]:
@@ -685,17 +694,18 @@ def check_ltgt(
             tool_grader = GradeableFunction.GradeableFunction(
                 grader, submission, config, toolid
             )
-            if greater:
+            if func is not None:
                 correct = (
-                    tool_grader.points_greater_than_y(y, x1, x2, tolerance)
-                    if func is None
-                    else tool_grader.gt_function(func, x1, x2, tolerance)
+                    tool_grader.gt_function(func, x1, x2, tolerance)
+                    if greater
+                    else tool_grader.lt_function(func, x1, x2, tolerance)
                 )
             else:
+                assert y is not None  # validated above: one of fun or y must be set
                 correct = (
-                    tool_grader.points_less_than_y(y, x1, x2, tolerance)
-                    if func is None
-                    else tool_grader.lt_function(func, x1, x2, tolerance)
+                    tool_grader.points_greater_than_y(y, x1, x2, tolerance)
+                    if greater
+                    else tool_grader.points_less_than_y(y, x1, x2, tolerance)
                 )
             if debug:
                 debug_message += tool_grader.debugger.get_message_as_list_and_clear()
@@ -715,19 +725,22 @@ def check_ltgt(
                     grader, submission, config, toolid
                 )
 
-            if greater:
+            if func is not None:
+                correct = (
+                    tool_grader.gt_function(func, x1, x2, tolerance)
+                    if greater
+                    else tool_grader.lt_function(func, x1, x2, tolerance)
+                )
+            else:
+                assert y is not None  # validated above: one of fun or y must be set
                 correct = (
                     tool_grader.is_greater_than_y_between(
                         y, x1, x2, tolerance=tolerance
                     )
-                    if func is None
-                    else tool_grader.gt_function(func, x1, x2, tolerance)
-                )
-            else:
-                correct = (
-                    tool_grader.is_less_than_y_between(y, x1, x2, tolerance=tolerance)
-                    if func is None
-                    else tool_grader.lt_function(func, x1, x2, tolerance)
+                    if greater
+                    else tool_grader.is_less_than_y_between(
+                        y, x1, x2, tolerance=tolerance
+                    )
                 )
             if debug:
                 debug_message += tool_grader.debugger.get_message_as_list_and_clear()

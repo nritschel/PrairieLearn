@@ -5,9 +5,13 @@ import { z } from 'zod';
 
 import { runInTransactionAsync } from '@prairielearn/postgres';
 
+import {
+  MAX_ACCESS_CONTROL_RULES,
+  MAX_ENROLLMENT_RULES,
+  validateAccessControlRules,
+} from '../../lib/assessment-access-control/validation.js';
 import { StaffStudentLabelSchema } from '../../lib/client/safe-db-types.js';
 import { saveJsonFile } from '../../lib/editorUtil.js';
-import { features } from '../../lib/features/index.js';
 import {
   type EnrollmentAccessControlRuleData,
   deleteEnrollmentAccessControlsByIds,
@@ -21,41 +25,20 @@ import {
   validateEnrollmentIdsInCourseInstance,
 } from '../../models/enrollment.js';
 import { selectStudentLabelsInCourseInstance } from '../../models/student-label.js';
-import {
-  type AccessControlJson,
-  AccessControlJsonSchema,
-  MAX_ACCESS_CONTROL_RULES,
-  MAX_ENROLLMENT_RULES,
-} from '../../schemas/accessControl.js';
+import { type AccessControlJson, AccessControlJsonSchema } from '../../schemas/accessControl.js';
 import type { AssessmentJsonInput } from '../../schemas/infoAssessment.js';
-import { validateAccessControlArray } from '../../sync/course-db.js';
-import { validateRule } from '../../sync/fromDisk/accessControl.js';
 import { throwAppError } from '../app-errors.js';
 
 import {
   requireCourseInstancePermissionEdit,
   requireCourseInstancePermissionView,
+  requireEnhancedAccessControl,
   t,
 } from './init.js';
 
 export interface AccessControlError {
   SaveAllRules: { code: 'SYNC_JOB_FAILED'; jobSequenceId: string };
 }
-
-const requireEnhancedAccessControl = t.middleware(async (opts) => {
-  const enabled = await features.enabled('enhanced-access-control', {
-    institution_id: opts.ctx.course.institution_id,
-    course_id: opts.ctx.course.id,
-    course_instance_id: opts.ctx.course_instance.id,
-  });
-  if (!enabled) {
-    throw new TRPCError({
-      code: 'FORBIDDEN',
-      message: 'Enhanced access control is not enabled for this course.',
-    });
-  }
-  return opts.next();
-});
 
 const students = t.procedure
   .use(requireEnhancedAccessControl)
@@ -115,38 +98,32 @@ function formJsonToEnrollmentRuleData(
   const ac = rule.afterComplete;
   return {
     id: rule.id,
-    listBeforeRelease: rule.listBeforeRelease ?? null,
-    releaseDateOverridden: dc?.releaseDate !== undefined,
-    releaseDate: dc?.releaseDate ?? null,
+    beforeReleaseListed: rule.beforeRelease?.listed ?? null,
+    releaseDate: dc?.release?.date ?? null,
     dueDateOverridden: dc?.dueDate !== undefined,
     dueDate: dc?.dueDate ?? null,
     earlyDeadlinesOverridden: dc?.earlyDeadlines !== undefined,
     lateDeadlinesOverridden: dc?.lateDeadlines !== undefined,
     afterLastDeadlineAllowSubmissions: dc?.afterLastDeadline?.allowSubmissions ?? null,
-    afterLastDeadlineCreditOverridden: dc?.afterLastDeadline?.credit !== undefined,
-    afterLastDeadlineCredit: dc?.afterLastDeadline?.credit ?? null,
+    afterLastDeadlineCredit:
+      dc?.afterLastDeadline?.allowSubmissions === true
+        ? (dc.afterLastDeadline.credit ?? null)
+        : null,
     durationMinutesOverridden: dc?.durationMinutes !== undefined,
     durationMinutes: dc?.durationMinutes ?? null,
     passwordOverridden: dc?.password !== undefined,
     password: dc?.password ?? null,
-    hideQuestions: ac?.hideQuestions ?? null,
-    showQuestionsAgainDateOverridden: ac?.showQuestionsAgainDate !== undefined,
-    showQuestionsAgainDate: ac?.showQuestionsAgainDate ?? null,
-    hideQuestionsAgainDateOverridden: ac?.hideQuestionsAgainDate !== undefined,
-    hideQuestionsAgainDate: ac?.hideQuestionsAgainDate ?? null,
-    hideScore: ac?.hideScore ?? null,
-    showScoreAgainDateOverridden: ac?.showScoreAgainDate !== undefined,
-    showScoreAgainDate: ac?.showScoreAgainDate ?? null,
+    questionsHidden: ac?.questions?.hidden ?? null,
+    questionsVisibleFromDate: ac?.questions?.visibleFromDate ?? null,
+    questionsVisibleUntilDate: ac?.questions?.visibleUntilDate ?? null,
+    scoreHidden: ac?.score?.hidden ?? null,
+    scoreVisibleFromDate: ac?.score?.visibleFromDate ?? null,
     earlyDeadlines: dc?.earlyDeadlines ?? [],
     lateDeadlines: dc?.lateDeadlines ?? [],
   };
 }
 
-// TODO: Add client-side validation for duplicate PrairieTest exam UUIDs and
-// duplicate deadline dates before this goes live. Server-side validation
-// (validateRule) catches these for all rule types, but the UI should block
-// saves proactively so users get immediate feedback instead of a server error.
-export const AccessControlJsonInputSchema = AccessControlJsonSchema.extend({
+const AccessControlJsonInputSchema = AccessControlJsonSchema.extend({
   id: z.string().optional(),
 }).strip();
 
@@ -167,7 +144,7 @@ function isNonEmptyObject(value: unknown): boolean {
 
 /**
  * Cleans access control rules for writing to infoAssessment.json on disk.
- * Removes empty objects/arrays and omits listBeforeRelease: false on the main rule.
+ * Removes empty objects/arrays and omits beforeRelease: { listed: false } on the main rule.
  */
 export function cleanAccessControlRulesForDisk(rules: AccessControlJson[]): AccessControlJson[] {
   return rules.map((rule, index) => {
@@ -177,8 +154,8 @@ export function cleanAccessControlRulesForDisk(rules: AccessControlJson[]): Acce
       clean.labels = rule.labels;
     }
 
-    if (index === 0 && rule.listBeforeRelease === true) {
-      clean.listBeforeRelease = true;
+    if (index === 0 && rule.beforeRelease?.listed === true) {
+      clean.beforeRelease = { listed: true };
     }
 
     if (isNonEmptyObject(rule.dateControl)) {
@@ -209,25 +186,8 @@ const saveAllRules = t.procedure
   )
   .mutation(async (opts) => {
     const { rules, enrollmentRules, origHash } = opts.input;
-
     // Validate all rules before writing anything to disk or DB.
     const rulesToSync: AccessControlJson[] = rules.map(({ id: _id, ...rest }) => rest);
-
-    // Validate array-level invariants (exactly one main rule, must be first).
-    const { errors: arrayErrors } = validateAccessControlArray({
-      accessControlJsonArray: rulesToSync,
-    });
-    if (arrayErrors.length > 0) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: arrayErrors[0] });
-    }
-
-    for (const [index, rule] of rulesToSync.entries()) {
-      const targetType = index === 0 ? 'none' : 'student_label';
-      const ruleError = validateRule(rule, targetType);
-      if (ruleError) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: ruleError });
-      }
-    }
 
     if (enrollmentRules !== undefined && enrollmentRules.length > 0) {
       const allEnrollmentIds = new Set(enrollmentRules.flatMap((r) => r.enrollmentIds));
@@ -243,19 +203,20 @@ const saveAllRules = t.procedure
           });
         }
       }
+    }
 
-      for (const enrollmentRule of enrollmentRules) {
-        const ruleError = validateRule(enrollmentRule.ruleJson, 'enrollment');
-        if (ruleError) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: ruleError });
-        }
-      }
+    const { errors: validationErrors } = validateAccessControlRules({
+      rules: rulesToSync,
+      enrollmentRules: enrollmentRules?.map((r) => r.ruleJson),
+    });
+    if (validationErrors.length > 0) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: validationErrors[0] });
     }
 
     const assessmentDir = path.join(
       opts.ctx.course.path,
       'courseInstances',
-      opts.ctx.course_instance.short_name!,
+      opts.ctx.course_instance.short_name,
       'assessments',
       opts.ctx.assessment.tid!,
     );

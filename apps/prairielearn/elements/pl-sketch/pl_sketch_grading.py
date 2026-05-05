@@ -645,7 +645,7 @@ def check_ltgt(
     g_l = "greater" if greater else "less"
     feedback = (
         grader["feedback"]
-        or f"An drawing is not {g_l} than the expected function or y-value in the expected range(s)."
+        or f"A drawing is not {g_l} than the expected function or y-value in the expected range(s)."
     )
     tools_to_check = get_tools_to_check(
         grader,

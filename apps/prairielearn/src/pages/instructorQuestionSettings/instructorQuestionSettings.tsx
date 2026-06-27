@@ -43,6 +43,7 @@ import { idsEqual } from '../../lib/id.js';
 import { getPaths } from '../../lib/instructorFiles.js';
 import { applyKeyOrder } from '../../lib/json.js';
 import { formatJsonWithPrettier } from '../../lib/prettier.js';
+import { selectQuestionsBlockingDeletion } from '../../lib/question-deletion-validation.js';
 import { validatePreferencesSchema } from '../../lib/question-settings/validation.js';
 import { startTestQuestion } from '../../lib/question-testing.js';
 import { typedAsyncHandler } from '../../lib/res-locals.js';
@@ -58,7 +59,7 @@ import {
 } from '../../models/sharing-set.js';
 import { selectTagsByCourseId, selectTagsByQuestionId } from '../../models/tags.js';
 import { selectTopicsByCourseId } from '../../models/topics.js';
-import { type QuestionPreferencesSchemaJson } from '../../schemas/infoQuestion.js';
+import type { QuestionPreferencesSchemaJson } from '../../schemas/infoQuestion.js';
 
 import { InstructorQuestionSettingsForm } from './instructorQuestionSettings.html.js';
 import {
@@ -192,7 +193,7 @@ router.post(
           workspace_port: IntegerFromStringOrEmptySchema.nullable().optional(),
           workspace_home: z.string().optional(),
           workspace_args: ArgumentsSchema,
-          workspace_rewrite_url: BooleanFromCheckboxSchema,
+          workspace_rewrite_url: z.enum(['true', 'false', 'null']).default('null'),
           workspace_graded_files: GradedFilesSchema,
           workspace_enable_networking: BooleanFromCheckboxSchema,
           workspace_environment: z.string().optional(),
@@ -216,7 +217,7 @@ router.post(
                       // Fall through to error
                     }
                     ctx.addIssue({
-                      code: z.ZodIssueCode.custom,
+                      code: 'custom',
                       message: 'Invalid enum format',
                     });
                     return z.NEVER;
@@ -228,7 +229,7 @@ router.post(
               prefs.forEach((pref, i) => {
                 if (names.has(pref.name)) {
                   ctx.addIssue({
-                    code: z.ZodIssueCode.custom,
+                    code: 'custom',
                     message: `Duplicate preference name: "${pref.name}"`,
                     path: [i, 'name'],
                   });
@@ -384,11 +385,8 @@ router.post(
           body.workspace_args,
           (v: any) => !v || v.length === 0,
         ),
-        rewriteUrl: propertyValueWithDefault(
-          questionInfo.workspaceOptions?.rewriteUrl,
-          body.workspace_rewrite_url,
-          true,
-        ),
+        rewriteUrl:
+          body.workspace_rewrite_url === 'null' ? undefined : body.workspace_rewrite_url === 'true',
         gradedFiles: propertyValueWithDefault(
           questionInfo.workspaceOptions?.gradedFiles,
           body.workspace_graded_files,
@@ -407,9 +405,9 @@ router.post(
       };
 
       // We'll only write the workspace options if the request contains the
-      // required fields. Client-side validation will ensure that these are
-      // present if a workspace is configured.
-      if (workspaceOptions.image && workspaceOptions.port && workspaceOptions.home) {
+      // image. Client-side validation will ensure that it is present if a
+      // workspace is configured.
+      if (workspaceOptions.image) {
         const filteredOptions = Object.fromEntries(
           Object.entries(
             propertyValueWithDefault(
@@ -560,6 +558,19 @@ router.post(
         });
       }
     } else if (req.body.__action === 'delete_question') {
+      const usedInOtherCourses = await selectQuestionsBlockingDeletion({
+        course: res.locals.course,
+        questions: [res.locals.question],
+      });
+
+      if (usedInOtherCourses.length > 0) {
+        flash(
+          'error',
+          'This question is used by another course and cannot be deleted. Unshare it or remove it from those assessments first.',
+        );
+        return res.redirect(req.originalUrl);
+      }
+
       const editor = new QuestionDeleteEditor({
         locals: res.locals,
         questions: res.locals.question,

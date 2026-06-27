@@ -1,12 +1,13 @@
 import { Button, Form } from 'react-bootstrap';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 
 import { OverlayTrigger } from '@prairielearn/ui';
 
+import { useAccessControlRuleEditable } from './AccessControlEditabilityContext.js';
 import { DefaultAfterCompleteForm } from './AfterCompleteForm.js';
 import { DefaultDateControlForm } from './DateControlForm.js';
 import { IntegrationsSection } from './IntegrationsSection.js';
-import { type AccessControlFormData, defaultRuleHasCompletionMechanism } from './types.js';
+import { type AccessControlFormData } from './types.js';
 
 const beforeReleasePopoverConfig = {
   header: 'What does "before release" mean?',
@@ -23,31 +24,14 @@ const beforeReleasePopoverConfig = {
 export function DefaultRuleForm({
   displayTimezone,
   isExam,
+  hasExamAutoClose,
 }: {
   displayTimezone: string;
   isExam: boolean;
+  hasExamAutoClose: boolean;
 }) {
+  const ruleEditable = useAccessControlRuleEditable();
   const { register } = useFormContext<AccessControlFormData>();
-  const dateControlEnabled = useWatch<AccessControlFormData, 'defaultRule.dateControlEnabled'>({
-    name: 'defaultRule.dateControlEnabled',
-  });
-  const due = useWatch<AccessControlFormData, 'defaultRule.due'>({ name: 'defaultRule.due' });
-  const lateDeadlines = useWatch<AccessControlFormData, 'defaultRule.lateDeadlines'>({
-    name: 'defaultRule.lateDeadlines',
-  });
-  const durationMinutes = useWatch<AccessControlFormData, 'defaultRule.durationMinutes'>({
-    name: 'defaultRule.durationMinutes',
-  });
-  const prairieTestExams = useWatch<AccessControlFormData, 'defaultRule.prairieTestExams'>({
-    name: 'defaultRule.prairieTestExams',
-  });
-  const hasCompletionMechanism = defaultRuleHasCompletionMechanism({
-    dateControlEnabled,
-    due,
-    lateDeadlines,
-    durationMinutes,
-    prairieTestExams,
-  });
 
   return (
     <div className="d-flex flex-column gap-3">
@@ -71,6 +55,7 @@ export function DefaultRuleForm({
           type="checkbox"
           id="defaultRule-before-release-listed"
           label={<strong>List before release</strong>}
+          disabled={!ruleEditable}
           {...register('defaultRule.beforeReleaseListed')}
           aria-describedby="defaultRule-before-release-listed-help"
         />
@@ -78,7 +63,11 @@ export function DefaultRuleForm({
           Students can see the assessment title before release
         </Form.Text>
       </div>
-      {hasCompletionMechanism && <DefaultAfterCompleteForm displayTimezone={displayTimezone} />}
+      <DefaultAfterCompleteForm
+        displayTimezone={displayTimezone}
+        isExam={isExam}
+        hasExamAutoClose={hasExamAutoClose}
+      />
     </div>
   );
 }

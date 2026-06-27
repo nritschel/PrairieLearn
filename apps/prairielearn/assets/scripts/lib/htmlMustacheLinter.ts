@@ -1,11 +1,13 @@
-import { type Formatter, createFormatter } from '@reteps/tree-sitter-htmlmustache/formatter';
+import type ace from 'ace-builds';
+
+import { type Formatter, createFormatter } from '@prairielearn/tree-sitter-htmlmustache/formatter';
 import {
   type Diagnostic,
   type Linter,
   createLinter,
-} from '@reteps/tree-sitter-htmlmustache/linter';
-import type ace from 'ace-builds';
+} from '@prairielearn/tree-sitter-htmlmustache/linter';
 
+import { formats } from '../../../src/lib/element-schemas/htmlmustache-plugin.js';
 import { htmlMustacheConfig } from '../../../src/lib/htmlMustacheConfig.js';
 
 const GRAMMAR_WASM_FILENAME = 'tree-sitter-htmlmustache.wasm';
@@ -36,6 +38,7 @@ function getLinter(): Promise<Linter> {
 
   linterPromise = createLinter({
     locateWasm,
+    formats,
   });
   return linterPromise;
 }
@@ -65,9 +68,11 @@ function diagnosticsToAnnotations(diagnostics: Diagnostic[]): ace.Ace.Annotation
 export function attachHtmlMustacheLinter({
   editor,
   reformatButton,
+  onReformatError,
 }: {
   editor: ace.Ace.Editor;
   reformatButton: HTMLButtonElement | null;
+  onReformatError: () => void;
 }): void {
   let debounceTimer: number | undefined;
 
@@ -88,9 +93,6 @@ export function attachHtmlMustacheLinter({
   void runLint();
 
   if (reformatButton) {
-    window.bootstrap.Toast.getOrCreateInstance('#js-html-mustache-reformat-error', {
-      delay: 5000,
-    });
     reformatButton.addEventListener('click', async () => {
       try {
         const formatter = await getFormatter();
@@ -102,7 +104,7 @@ export function attachHtmlMustacheLinter({
         editor.focus();
       } catch (err) {
         console.error('htmlmustache reformat failed', err);
-        window.bootstrap.Toast.getOrCreateInstance('#js-html-mustache-reformat-error').show();
+        onReformatError();
       }
     });
   }

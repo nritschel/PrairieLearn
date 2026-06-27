@@ -15,7 +15,7 @@
  * you should use the branded schema for type safety.
  */
 
-import { type z } from 'zod';
+import { z } from 'zod';
 
 import {
   AccessTokenSchema as RawAccessTokenSchema,
@@ -36,6 +36,9 @@ import {
   InstanceQuestionGroupSchema as RawInstanceQuestionGroupSchema,
   InstanceQuestionSchema as RawInstanceQuestionSchema,
   InstitutionSchema as RawInstitutionSchema,
+  InstitutionSettingsSchema as RawInstitutionSettingsSchema,
+  JobSchema as RawJobSchema,
+  JobSequenceSchema as RawJobSequenceSchema,
   QuestionSchema as RawQuestionSchema,
   RubricItemSchema as RawRubricItemSchema,
   RubricSchema as RawRubricSchema,
@@ -43,6 +46,7 @@ import {
   SprocAuthzAssessmentInstanceSchema as RawSprocAuthzAssessmentInstanceSchema,
   StudentLabelSchema as RawStudentLabelSchema,
   TagSchema as RawTagSchema,
+  GroupSchema as RawTeamSchema,
   TopicSchema as RawTopicSchema,
   UserSchema as RawUserSchema,
   ZoneSchema as RawZoneSchema,
@@ -287,7 +291,6 @@ export const RawStudentCourseSchema = RawStaffCourseSchema.pick({
   example_course: true,
   id: true,
   institution_id: true,
-  options: true,
   short_name: true,
   template_course: true,
   title: true,
@@ -371,6 +374,18 @@ export const RawStaffGroupConfigSchema = RawGroupConfigSchema;
 export const StaffGroupConfigSchema = RawStaffGroupConfigSchema.brand<'StaffGroupConfig'>();
 export type StaffGroupConfig = z.infer<typeof StaffGroupConfigSchema>;
 
+/** Groups (the `teams` table; "group" is the UI-facing name) */
+export const RawStaffGroupSchema = RawTeamSchema.pick({
+  course_instance_id: true,
+  date: true,
+  deleted_at: true,
+  id: true,
+  name: true,
+  team_config_id: true,
+});
+export const StaffGroupSchema = RawStaffGroupSchema.brand<'StaffGroup'>();
+export type StaffGroup = z.infer<typeof StaffGroupSchema>;
+
 /** Instance Question Groups */
 export const RawStaffInstanceQuestionGroupSchema = RawInstanceQuestionGroupSchema;
 export const StaffInstanceQuestionGroupSchema =
@@ -416,6 +431,25 @@ export const RawAdminInstitutionSchema = RawInstitutionSchema.pick({
 export const AdminInstitutionSchema = RawAdminInstitutionSchema.brand<'AdminInstitution'>();
 export type AdminInstitution = z.infer<typeof AdminInstitutionSchema>;
 
+export const RawAdminInstitutionSettingsSchema = RawInstitutionSettingsSchema.pick({
+  course_request_message: true,
+  github_course_owner: true,
+  institution_id: true,
+});
+export const AdminInstitutionSettingsSchema =
+  RawAdminInstitutionSettingsSchema.brand<'AdminInstitutionSettings'>();
+export type AdminInstitutionSettings = z.infer<typeof AdminInstitutionSettingsSchema>;
+
+// An admin institution paired with its institution_settings, as returned by
+// `selectAllInstitutionsWithSettings`. Keeping the institution and its
+// settings as distinct fields lets the institution stay a branded
+// `AdminInstitution` rather than a flattened look-alike.
+export const AdminInstitutionWithSettingsSchema = z.object({
+  institution: AdminInstitutionSchema,
+  institution_settings: AdminInstitutionSettingsSchema.nullable(),
+});
+export type AdminInstitutionWithSettings = z.infer<typeof AdminInstitutionWithSettingsSchema>;
+
 export const RawStaffInstitutionSchema = RawInstitutionSchema.pick({
   default_authn_provider_id: true,
   display_timezone: true,
@@ -425,6 +459,37 @@ export const RawStaffInstitutionSchema = RawInstitutionSchema.pick({
 });
 export const StaffInstitutionSchema = RawStaffInstitutionSchema.brand<'StaffInstitution'>();
 export type StaffInstitution = z.infer<typeof StaffInstitutionSchema>;
+
+/** Jobs */
+export const RawStaffJobSchema = RawJobSchema.pick({
+  arguments: true,
+  command: true,
+  description: true,
+  error_message: true,
+  exit_code: true,
+  exit_signal: true,
+  finish_date: true,
+  id: true,
+  number_in_sequence: true,
+  output: true,
+  start_date: true,
+  status: true,
+  working_directory: true,
+});
+export const StaffJobSchema = RawStaffJobSchema.brand<'StaffJob'>();
+export type StaffJob = z.infer<typeof StaffJobSchema>;
+
+/** Job Sequences */
+export const RawStaffJobSequenceSchema = RawJobSequenceSchema.pick({
+  description: true,
+  id: true,
+  legacy: true,
+  number: true,
+  start_date: true,
+  status: true,
+});
+export const StaffJobSequenceSchema = RawStaffJobSequenceSchema.brand<'StaffJobSequence'>();
+export type StaffJobSequence = z.infer<typeof StaffJobSequenceSchema>;
 
 /** Publishing Extensions */
 export const StaffCourseInstancePublishingExtensionSchema =

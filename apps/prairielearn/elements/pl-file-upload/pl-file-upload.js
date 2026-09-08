@@ -57,6 +57,8 @@
 
       this.pendingFileDownloads = new Set();
       this.failedFileDownloads = new Set();
+      // A persistent set across renders, since the file list is rebuilt on every change
+      this.expandedFiles = new Set();
 
       const elementId = '#file-upload-' + uuid;
       this.element = $(elementId);
@@ -251,6 +253,7 @@
 
           this.saveSubmittedFile(name, size, isFromDownload ? null : new Date(), base64FileData);
           this.refreshRequiredRegex();
+          this.expandedFiles.add(name);
           this.renderFileList();
 
           if (!isFromDownload) {
@@ -305,6 +308,7 @@
     deleteUploadedFile(name) {
       this.pendingFileDownloads.delete(name);
       this.failedFileDownloads.delete(name);
+      this.expandedFiles.delete(name);
       const idx = this.files.findIndex((file) => file.name === name);
       if (idx !== -1) {
         this.files.splice(idx, 1);
@@ -338,15 +342,6 @@
     renderFileList() {
       const $fileList = this.element.find('.file-upload-status .card ul.list-group');
 
-      // Save which cards are currently expanded
-      const expandedFiles = [];
-      $fileList.children().each(function () {
-        const fileName = $(this).attr('data-file');
-        if (fileName && $(this).find('.file-preview').hasClass('show')) {
-          expandedFiles.push(fileName);
-        }
-      });
-
       $fileList.html('');
 
       const uuid = this.uuid;
@@ -354,16 +349,13 @@
 
       // This is called repeatedly with different parameters for required/optional/regex entries
       const renderFileListEntry = (fileName, isOptional = false, isWildcard = false) => {
-        const isExpanded = expandedFiles.includes(fileName);
+        const isExpanded = this.expandedFiles.has(fileName);
         const fileData = this.getSubmittedFileContents(fileName);
 
         const $file = $(
           `<li class="list-group-item" data-file="${escapeFileName(fileName)}"></li>`,
         );
         const $fileStatusContainer = $('<div class="file-status-container d-flex flex-row"></div>');
-        if (isExpanded) {
-          $fileStatusContainer.removeClass('collapsed');
-        }
 
         if (fileData) {
           $fileStatusContainer.addClass('has-preview');
@@ -450,6 +442,9 @@
             $preview.addClass('show');
           }
 
+          $preview.on('show.bs.collapse', () => this.expandedFiles.add(fileName));
+          $preview.on('hide.bs.collapse', () => this.expandedFiles.delete(fileName));
+
           const $fileButtons = $('<div class="align-self-center"></div>');
           $fileButtons.append($download);
           $deleteUpload.on('click', () => this.deleteUploadedFile(fileName));
@@ -483,14 +478,12 @@
                 URL.revokeObjectURL(url);
               });
               $preview.append($objectPreview);
-              this.expandPreviewForFile($file, $preview);
             } else {
               // First try to display the file as an image. If that fails,
               // try to display it as text.
               $imgPreview
                 .on('load', () => {
                   $imgPreview.removeClass('d-none');
-                  this.expandPreviewForFile($file, $preview);
                   URL.revokeObjectURL(url);
                 })
                 .on('error', () => {
@@ -502,7 +495,6 @@
                     $codePreview.find('code').text('Binary file not previewed.');
                   }
                   $codePreview.removeClass('d-none');
-                  this.expandPreviewForFile($file, $preview);
                 })
                 .attr('src', url);
             }
@@ -570,11 +562,6 @@
       $alert.append(message);
       this.element.find('.messages').find('.alert').remove();
       this.element.find('.messages').append($alert);
-    }
-
-    expandPreviewForFile(container, preview) {
-      preview.addClass('show');
-      container.find('.file-preview-button').removeClass('collapsed');
     }
 
     /**

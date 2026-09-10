@@ -2,7 +2,7 @@ name: CI Report
 
 on:
   workflow_run:
-    workflows: ['Check', 'Images']
+    workflows: ['Check']
     types: [completed]
 
 permissions:
@@ -10,7 +10,7 @@ permissions:
   contents: read
   pull-requests: write
 
-# Serialize per branch so concurrent Check + Images completions don't race on the comment.
+# Serialize per branch so concurrent completions don't race on the comment.
 concurrency:
   group: ci-report-${{ github.event.workflow_run.head_branch }}
 

@@ -220,6 +220,7 @@ export const ConfigSchema = z.object({
   cronIntervalWorkspaceHostTransitionsSec: z.number().default(10),
   cronIntervalChunksHostAutoScalingSec: z.number().default(10),
   cronIntervalCleanTimeSeriesSec: z.number().default(10 * 60),
+  cronIntervalCleanSubmissionDraftsSec: z.number().default(10 * 60),
   cronIntervalFetchNewsItemsSec: z.number().default(5 * 60),
   cronDailySec: z.number().default(8 * 60 * 60),
   /**
@@ -227,6 +228,12 @@ export const ConfigSchema = z.object({
    * from the `time_series` table in the database.
    */
   timeSeriesRetentionPeriodSec: z.number().default(24 * 60 * 60),
+  /**
+   * Controls how long unsaved student work is retained for recovery. Drafts are
+   * normally deleted as soon as they're restored or superseded by a submission;
+   * this is the backstop for drafts that are never resolved.
+   */
+  submissionDraftRetentionPeriodSec: z.number().default(24 * 60 * 60),
   /**
    * Configures how often Node metrics are computed and reported to Cloudwatch.
    * Set to `null` to disable Node metric reporting.

@@ -1603,6 +1603,17 @@ export const SubmissionSchema = z.object({
 });
 export type Submission = z.infer<typeof SubmissionSchema>;
 
+export const SubmissionDraftSchema = z.object({
+  created_at: DateFromISOString,
+  dismissed_at: DateFromISOString.nullable(),
+  id: IdSchema,
+  modified_at: DateFromISOString,
+  submitted_answer: z.record(z.string(), z.any()),
+  user_id: IdSchema,
+  variant_id: IdSchema,
+});
+export type SubmissionDraft = z.infer<typeof SubmissionDraftSchema>;
+
 export const TagSchema = z.object({
   color: z.string(),
   course_id: IdSchema,
@@ -1869,6 +1880,7 @@ export const TableNames = [
   'stripe_checkout_sessions',
   'student_label_enrollments',
   'student_labels',
+  'submission_drafts',
   'submissions',
   'tags',
   'time_series',

@@ -409,4 +409,6 @@ There are two ways to address this issue:
 
 - If you want PrairieLearn to defer the initial value capture until after your custom code has run, you can add the `data-deferred-initial-value="true"` attribute to specific input elements. This will tell PrairieLearn to wait until the value attribute of these inputs has been set by your code for the first time before capturing their initial values. For this functionality to work, your code must ensure that the input value attributes are set within a reasonable time after the question is loaded, and that they are always updated exactly once before the student starts interacting with the question.
 
+The same change tracking decides when PrairieLearn captures unsaved work for recovery, so an element that incorrectly reports itself as changed will also cause students to be offered unsaved work that is identical to their last saved answer.
+
 Note that this functionality expects affected input elements (either untracked or deferred) to have unique names within the question form, preferably with type `hidden`. Particular care should be taken when using this functionality with custom elements that may have multiple instances in the same question, to ensure that each instance uses a unique input name that will not overlap with other copies of the element.

@@ -1,0 +1,17 @@
+columns
+    created_at: timestamp with time zone not null default CURRENT_TIMESTAMP
+    dismissed_at: timestamp with time zone
+    id: bigint not null default nextval('submission_drafts_id_seq'::regclass)
+    modified_at: timestamp with time zone not null default CURRENT_TIMESTAMP
+    submitted_answer: jsonb not null
+    user_id: bigint not null
+    variant_id: bigint not null
+
+indexes
+    submission_drafts_pkey: PRIMARY KEY (id) USING btree (id)
+    submission_drafts_variant_id_user_id_key: UNIQUE (variant_id, user_id) USING btree (variant_id, user_id)
+    submission_drafts_modified_at_idx: USING btree (modified_at)
+
+foreign-key constraints
+    submission_drafts_user_id_fkey: FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
+    submission_drafts_variant_id_fkey: FOREIGN KEY (variant_id) REFERENCES variants(id) ON UPDATE CASCADE ON DELETE CASCADE

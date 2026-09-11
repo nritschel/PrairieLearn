@@ -1,5 +1,6 @@
 import assert from 'assert';
 
+import { omit } from 'es-toolkit';
 import { type Request, type Response, Router } from 'express';
 
 import { HttpStatusError } from '@prairielearn/error';
@@ -12,6 +13,7 @@ import { canDeleteAssessmentInstance } from '../../lib/assessment.shared.js';
 import { getQuestionCopyTargets } from '../../lib/copy-content.js';
 import { type File } from '../../lib/db-types.js';
 import { deleteFile, uploadFile } from '../../lib/file-store.js';
+import { saveSubmission } from '../../lib/grading.js';
 import { getQuestionGroupPermissions } from '../../lib/groups.js';
 import { idsEqual } from '../../lib/id.js';
 import { reportIssueFromForm } from '../../lib/issues.js';
@@ -23,6 +25,13 @@ import clientFingerprint from '../../middlewares/clientFingerprint.js';
 import { enterpriseOnly } from '../../middlewares/enterpriseOnly.js';
 import { logPageView } from '../../middlewares/logPageView.js';
 import { selectEnabledToolsForInstanceQuestion } from '../../models/assessment.js';
+import {
+  deleteSubmissionDraft,
+  dismissSubmissionDraft,
+  selectOptionalRecoverableSubmissionDraft,
+  selectOptionalSubmissionDraft,
+  upsertSubmissionDraft,
+} from '../../models/submission-draft.js';
 import { selectUserById } from '../../models/user.js';
 import { selectAndAuthzVariant, selectVariantsByInstanceQuestion } from '../../models/variant.js';
 
@@ -190,7 +199,95 @@ async function validateAndProcessSubmission(req: Request, res: Response) {
       'Your current group role does not give you permission to submit to this question.',
     );
   }
-  return await processSubmission(req, res, { studentSubmission: true });
+  const variant_id = await processSubmission(req, res, { studentSubmission: true });
+
+  // The student's work is now saved, so any stored draft is obsolete.
+  await deleteSubmissionDraft({ variant_id, user_id: res.locals.user.id });
+
+  return variant_id;
+}
+
+/**
+ * Whether unsaved work should be recorded for and offered back to the current
+ * user. This requires that the student could submit right now, since a draft is
+ * only useful if it can eventually be turned into a submission.
+ *
+ * Only Freeform (v3) questions are supported. Legacy Calculation questions
+ * build their submitted answer in client-side JavaScript rather than in the
+ * question form, so there is nothing meaningful to snapshot.
+ */
+function canRecoverUnsavedWork(res: Response): boolean {
+  return (
+    res.locals.question.type === 'Freeform' &&
+    !!res.locals.assessment_instance.open &&
+    !!res.locals.instance_question.open &&
+    res.locals.authz_result.active &&
+    res.locals.authz_result.authorized_edit &&
+    res.locals.instance_question_info.question_access_mode !== 'read_only_lockpoint' &&
+    (!res.locals.group_config?.has_roles || res.locals.group_role_permissions.can_submit)
+  );
+}
+
+function questionUrl(res: Response, variant_id: string): string {
+  const url = `${res.locals.urlPrefix}/instance_question/${res.locals.instance_question.id}/`;
+  return res.locals.assessment.type === 'Exam' ? url : `${url}?variant_id=${variant_id}`;
+}
+
+async function authzVariantForDraft(req: Request, res: Response) {
+  if (!canRecoverUnsavedWork(res)) {
+    throw new HttpStatusError(403, 'Cannot record unsaved work for this question');
+  }
+
+  return await selectAndAuthzVariant({
+    unsafe_variant_id: req.body.__variant_id,
+    variant_course: res.locals.course,
+    question_id: res.locals.question.id,
+    course_instance_id: res.locals.course_instance.id,
+    instance_question_id: res.locals.instance_question.id,
+    authz_data: res.locals.authz_data,
+    authn_user: res.locals.authn_user,
+    user: res.locals.user,
+    is_administrator: res.locals.is_administrator,
+  });
+}
+
+/**
+ * Restores previously captured unsaved work by saving it as a submission. This
+ * deliberately reuses the normal save path, so the result is equivalent to the
+ * student having clicked "Save" at the moment the draft was captured. The work
+ * is not graded.
+ */
+async function processDraftRestore(req: Request, res: Response) {
+  const variant = await authzVariantForDraft(req, res);
+
+  if (variant.broken_at) {
+    throw new HttpStatusError(403, 'Cannot submit to a broken variant');
+  }
+
+  const draft = await selectOptionalSubmissionDraft({
+    variant_id: variant.id,
+    user_id: res.locals.user.id,
+  });
+
+  if (draft != null) {
+    await saveSubmission(
+      {
+        variant_id: variant.id,
+        user_id: res.locals.user.id,
+        auth_user_id: res.locals.authn_user.id,
+        submitted_answer: draft.submitted_answer,
+        credit: res.locals.authz_result.credit,
+        mode: res.locals.authz_data.mode,
+      },
+      variant,
+      res.locals.question,
+      res.locals.course,
+    );
+
+    await deleteSubmissionDraft({ variant_id: variant.id, user_id: res.locals.user.id });
+  }
+
+  return variant.id;
 }
 
 router.post(
@@ -275,6 +372,38 @@ router.post(
   }),
 );
 
+router.post(
+  '/unsaved_work',
+  typedAsyncHandler<'instance-question'>(async (req, res) => {
+    const variant = await authzVariantForDraft(req, res);
+
+    await upsertSubmissionDraft({
+      variant_id: variant.id,
+      user_id: res.locals.user.id,
+      submitted_answer: omit(req.body, ['__action', '__csrf_token', '__variant_id']),
+    });
+
+    res.sendStatus(204);
+  }),
+);
+
+router.post(
+  '/unsaved_work/restore',
+  typedAsyncHandler<'instance-question'>(async (req, res) => {
+    const variant_id = await processDraftRestore(req, res);
+    res.redirect(questionUrl(res, variant_id));
+  }),
+);
+
+router.post(
+  '/unsaved_work/dismiss',
+  typedAsyncHandler<'instance-question'>(async (req, res) => {
+    const variant = await authzVariantForDraft(req, res);
+    await dismissSubmissionDraft({ variant_id: variant.id, user_id: res.locals.user.id });
+    res.redirect(questionUrl(res, variant.id));
+  }),
+);
+
 router.get(
   '/variant/:unsafe_variant_id(\\d+)/submission/:unsafe_submission_id(\\d+)',
   typedAsyncHandler<'instance-question'>(async (req, res) => {
@@ -355,6 +484,16 @@ router.get(
 
     const renderState = await getAndRenderVariant(variant_id, null, res.locals);
 
+    // If unsaved work is being offered back to the student, we don't record new
+    // snapshots until they've either restored or dismissed it. Otherwise typing
+    // in the restored question would overwrite the very draft we're offering.
+    const unsavedWorkDraft = canRecoverUnsavedWork(res)
+      ? await selectOptionalRecoverableSubmissionDraft({
+          variant_id: renderState.variant.id,
+          user_id: res.locals.user.id,
+        })
+      : null;
+
     await logPageView('studentInstanceQuestion', req, res);
     const questionCopyTargets = await getQuestionCopyTargets({
       course: res.locals.course,
@@ -407,6 +546,8 @@ router.get(
         lastGrader,
         questionCopyTargets,
         enabledTools,
+        unsavedWorkDraft,
+        recordUnsavedWork: canRecoverUnsavedWork(res) && unsavedWorkDraft == null,
       }),
     );
   }),

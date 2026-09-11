@@ -14,6 +14,7 @@ import type { GradingJobStatus } from '../../src/models/grading-job.js';
 import { confirmOnUnload } from './lib/confirmOnUnload.js';
 import { copyContentModal } from './lib/copyContent.js';
 import { setupCountdown } from './lib/countdown.js';
+import { captureUnsavedWork } from './lib/unsavedWork.js';
 import './behaviors/bootstrap-compat.js';
 
 // We use `selector-observer` throughout this file to handle the case of
@@ -66,8 +67,20 @@ onDocumentReady(() => {
   observe('.question-container form.question-form', {
     constructor: HTMLFormElement,
     initialize(form) {
-      const cleanup = confirmOnUnload(form);
-      return { remove: () => cleanup() };
+      const cleanupConfirmOnUnload = confirmOnUnload(form);
+
+      // Only present when the server wants unsaved work to be captured for this
+      // question, which requires that the student could submit to it right now.
+      const stopCapturingUnsavedWork = document.getElementById('unsaved-work-data')
+        ? captureUnsavedWork(form)
+        : null;
+
+      return {
+        remove: () => {
+          cleanupConfirmOnUnload();
+          stopCapturingUnsavedWork?.();
+        },
+      };
     },
   });
 

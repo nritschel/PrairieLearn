@@ -1,0 +1,15 @@
+columns
+    auth_user_id: bigint not null
+    created_at: timestamp with time zone not null default now()
+    modified_at: timestamp with time zone not null default now()
+    raw_submitted_answer: jsonb not null
+    user_id: bigint
+    variant_id: bigint not null
+
+indexes
+    variant_drafts_pkey: PRIMARY KEY (variant_id) USING btree (variant_id)
+
+foreign-key constraints
+    variant_drafts_auth_user_id_fkey: FOREIGN KEY (auth_user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE CASCADE
+    variant_drafts_user_id_fkey: FOREIGN KEY (user_id) REFERENCES users(id) ON UPDATE CASCADE ON DELETE SET NULL
+    variant_drafts_variant_id_fkey: FOREIGN KEY (variant_id) REFERENCES variants(id) ON UPDATE CASCADE ON DELETE CASCADE

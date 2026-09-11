@@ -308,9 +308,7 @@ Docker Toolbox is no longer supported. [Docker Community Edition](https://www.do
 
 If you have a block of text that you want to re-use in many questions, possibly with a few parameters substituted into it, you can use the [`<pl-template>` element](./elements/pl-template.md). This element allows you to define a template in one place and then use it in many questions.
 
-!!! danger
-
-    Elements that accept and/or grade student input used within this element will not work correctly with `<pl-template>`. Templates should only contain other decorative elements.
+Templates may contain any element, including elements that accept and grade student input; the rendered template is processed exactly as if it had been written directly in `question.html`. Note that `<markdown>` tags have no effect inside a template.
 
 ## How can I hide the correct answer when students see their grading results?
 

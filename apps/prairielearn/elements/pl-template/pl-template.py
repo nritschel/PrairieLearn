@@ -14,17 +14,6 @@ TRIM_WHITESPACE_DEFAULT = True
 DIRECTORY_CHOICE_DEFAULT = "serverFilesCourse"
 LOG_TAG_WARNINGS_DEFAULT = True
 
-# These elements should be display only
-ALLOWED_PL_TAGS = frozenset((
-    "pl-template",
-    "pl-variable",
-    "pl-code",
-    "pl-card",
-    "pl-figure",
-    "pl-file-download",
-    "pl-matrix-latex",
-))
-
 # Entries from the data dict to copy
 DATA_ENTRIES_TO_COPY = ("params", "preferences")
 
@@ -44,15 +33,11 @@ def check_tags(element_html: str) -> None:
         if isinstance(e, lxml.etree._Comment):
             continue
 
-        is_tag_invald = (
-            isinstance(e.tag, str)
-            and e.tag.startswith("pl-")
-            and e.tag not in ALLOWED_PL_TAGS
-        ) or e.tag == "markdown"
-
-        if is_tag_invald:
+        # Markdown is converted before any element code runs, so a `<markdown>`
+        # tag produced by a template is left as-is.
+        if e.tag == "markdown":
             warnings.warn(
-                f'Element "{e.tag}" may not work correctly when used inside of "pl-template" element.',
+                '"<markdown>" tags have no effect when used inside of "pl-template" element.',
                 stacklevel=2,
             )
 
@@ -81,7 +66,7 @@ def get_file_path(element: lxml.html.HtmlElement, data: pl.QuestionData) -> str:
     return os.path.join(file_directory, file_name)
 
 
-def render(element_html: str, data: pl.QuestionData) -> str:
+def expand_html(element_html: str, data: pl.QuestionData) -> str:
     element = lxml.html.fragment_fromstring(element_html)
     required_attribs = ["file-name"]
     optional_attribs = [
@@ -95,6 +80,8 @@ def render(element_html: str, data: pl.QuestionData) -> str:
     variable_dict: dict[str, Any] = {
         k: copy.deepcopy(data[k]) for k in DATA_ENTRIES_TO_COPY
     }
+    # The template is expanded in every phase, so `uuid` differs between phases.
+    # It is only suitable for DOM ids, never for `answers-name` attributes.
     variable_dict["uuid"] = pl.get_uuid()
 
     for child in element:

@@ -786,3 +786,90 @@ def test_expand_html_with_core_element_end_to_end(course: FakeCourse) -> None:
     course.process("grade", html, grade_data)
     assert grade_data["partial_scores"]["z-re"]["score"] == pytest.approx(1.0)
     assert grade_data["partial_scores"]["z-im"]["score"] == pytest.approx(0.0)
+
+
+def add_pl_template_course(course: FakeCourse, template: str) -> str:
+    """Register core `pl-template` and `pl-number-input` and write a template file."""
+    templates_dir = course.path / "serverFilesCourse" / "templates"
+    templates_dir.mkdir(parents=True)
+    (templates_dir / "part.mustache").write_text(template)
+    for tag in ("pl-template", "pl-number-input"):
+        course.elements[tag] = {"name": tag, "controller": f"{tag}.py", "type": "core"}
+    return str(course.path / "serverFilesCourse")
+
+
+def pl_template_data(phase: Phase, server_files_course_path: str) -> dict[str, Any]:
+    data = make_data(phase)
+    data["options"]["server_files_course_path"] = server_files_course_path
+    data["params"]["answer"] = 7
+    return data
+
+
+PL_TEMPLATE_INPUT_HTML = """
+    <pl-template file-name="templates/part.mustache">
+      <pl-variable name="prompt"><b>Solve.</b></pl-variable>
+      <pl-variable name="answers-name">x</pl-variable>
+    </pl-template>
+"""
+
+
+def test_pl_template_with_input_element_end_to_end(course: FakeCourse) -> None:
+    server_files = add_pl_template_course(
+        course,
+        '<div class="part">{{{prompt}}}'
+        '<pl-number-input answers-name="{{answers-name}}" correct-answer="{{params.answer}}">'
+        "</pl-number-input></div>",
+    )
+
+    prepare_data = pl_template_data("prepare", server_files)
+    _, processed = course.process("prepare", PL_TEMPLATE_INPUT_HTML, prepare_data)
+    assert processed == {"pl-template", "pl-number-input"}
+    assert prepare_data["correct_answers"] == {"x": 7.0}
+
+    render_data = pl_template_data("render", server_files)
+    render_data["correct_answers"] = prepare_data["correct_answers"]
+    render_data["editable"] = True
+    rendered, _ = course.process("render", PL_TEMPLATE_INPUT_HTML, render_data)
+    assert rendered is not None
+    assert "<b>Solve.</b>" in rendered
+    assert rendered.count('name="x"') == 1
+    assert "pl-template" not in rendered
+
+    parse_data = pl_template_data("parse", server_files)
+    parse_data["correct_answers"] = prepare_data["correct_answers"]
+    parse_data["submitted_answers"] = {"x": "7"}
+    course.process("parse", PL_TEMPLATE_INPUT_HTML, parse_data)
+    assert parse_data["format_errors"] == {}
+
+    grade_data = pl_template_data("grade", server_files)
+    grade_data["correct_answers"] = prepare_data["correct_answers"]
+    grade_data["submitted_answers"] = parse_data["submitted_answers"]
+    course.process("grade", PL_TEMPLATE_INPUT_HTML, grade_data)
+    assert grade_data["partial_scores"]["x"]["score"] == pytest.approx(1.0)
+
+
+def test_pl_template_duplicate_answers_name_fails_at_prepare(
+    course: FakeCourse,
+) -> None:
+    server_files = add_pl_template_course(
+        course,
+        '<pl-number-input answers-name="{{answers-name}}"></pl-number-input>',
+    )
+
+    with pytest.raises(KeyError, match=r"Duplicate .*answers-name.*: .x."):
+        course.process(
+            "prepare",
+            PL_TEMPLATE_INPUT_HTML + PL_TEMPLATE_INPUT_HTML,
+            pl_template_data("prepare", server_files),
+        )
+
+
+def test_pl_template_missing_file_fails_at_prepare(course: FakeCourse) -> None:
+    server_files = add_pl_template_course(course, "")
+
+    with pytest.raises(FileNotFoundError):
+        course.process(
+            "prepare",
+            '<pl-template file-name="templates/missing.mustache"></pl-template>',
+            pl_template_data("prepare", server_files),
+        )

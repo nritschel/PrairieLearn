@@ -42,6 +42,8 @@ const qidsExampleCourse = [
   'element/pythonVariable',
   'element/stringInput',
   'element/symbolicInput',
+  'element/template',
+  'element/templateInput',
   'element/unitsInput',
   'element/variableOutput',
 ];

@@ -1,0 +1,28 @@
+<pl-question-panel>
+  <p>
+    A car starts from rest and accelerates at a constant
+    $a = {{params.a}}\,\mathrm{m/s^2}$ for $t = {{params.t}}\,\mathrm{s}$.
+  </p>
+  <p>
+    Each part below is rendered from the same template, which contains a
+    <code>pl-number-input</code> element. Input elements inside a template are
+    prepared, rendered, parsed, and graded exactly as if they were written
+    directly in <code>question.html</code>.
+  </p>
+</pl-question-panel>
+
+<pl-template file-name="templates/question_part.mustache">
+  <pl-variable name="header">Part 1</pl-variable>
+  <pl-variable name="prompt">What is the car's velocity after $t$ seconds?</pl-variable>
+  <pl-variable name="answers-name">v</pl-variable>
+  <pl-variable name="label">$v =$</pl-variable>
+  <pl-variable name="suffix">m/s</pl-variable>
+</pl-template>
+
+<pl-template file-name="templates/question_part.mustache">
+  <pl-variable name="header">Part 2</pl-variable>
+  <pl-variable name="prompt">How far has the car traveled after $t$ seconds?</pl-variable>
+  <pl-variable name="answers-name">d</pl-variable>
+  <pl-variable name="label">$d =$</pl-variable>
+  <pl-variable name="suffix">m</pl-variable>
+</pl-template>

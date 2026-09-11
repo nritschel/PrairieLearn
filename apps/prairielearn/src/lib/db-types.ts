@@ -1691,6 +1691,16 @@ export const VariantSchema = z.object({
 });
 export type Variant = z.infer<typeof VariantSchema>;
 
+export const VariantDraftSchema = z.object({
+  auth_user_id: IdSchema,
+  created_at: DateFromISOString,
+  modified_at: DateFromISOString,
+  raw_submitted_answer: z.record(z.string(), z.any()),
+  user_id: IdSchema.nullable(),
+  variant_id: IdSchema,
+});
+export type VariantDraft = z.infer<typeof VariantDraftSchema>;
+
 export const WorkspaceSchema = z.object({
   created_at: DateFromISOString,
   disk_usage_bytes: z.coerce.number().nullable(), // This is BIGINT, but always fits a number
@@ -1876,6 +1886,7 @@ export const TableNames = [
   'user_sessions',
   'user_settings',
   'users',
+  'variant_drafts',
   'variants',
   'workspace_host_logs',
   'workspace_hosts',

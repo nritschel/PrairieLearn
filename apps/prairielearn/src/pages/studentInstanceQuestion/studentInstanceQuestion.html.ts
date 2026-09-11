@@ -1,4 +1,5 @@
 import { EncodedData } from '@prairielearn/browser-utils';
+import { formatDateYMDHM } from '@prairielearn/formatter';
 import { html, unsafeHtml } from '@prairielearn/html';
 
 import {
@@ -19,7 +20,7 @@ import { QuestionNavSideGroup } from '../../components/QuestionNavigation.js';
 import { QuestionScorePanel } from '../../components/QuestionScore.js';
 import { assetPath, compiledScriptTag, nodeModulesAssetPath } from '../../lib/assets.js';
 import { type CopyTarget } from '../../lib/copy-content.js';
-import type { AssessmentTool, User } from '../../lib/db-types.js';
+import type { AssessmentTool, User, VariantDraft } from '../../lib/db-types.js';
 import { getRoleNamesForUser } from '../../lib/groups.shared.js';
 import type { ResLocalsInstanceQuestionRender } from '../../lib/question-render.types.js';
 import type { ResLocalsForPage } from '../../lib/res-locals.js';
@@ -32,6 +33,7 @@ export function StudentInstanceQuestion({
   lastGrader,
   questionCopyTargets,
   enabledTools = [],
+  restorableDraft = null,
 }: {
   resLocals: ResLocalsForPage<'instance-question'>;
   renderState: ResLocalsInstanceQuestionRender | null;
@@ -40,6 +42,8 @@ export function StudentInstanceQuestion({
   lastGrader?: User | null;
   questionCopyTargets?: CopyTarget[] | null;
   enabledTools?: AssessmentTool[];
+  /** An autosaved answer that is newer than the most recent submission. */
+  restorableDraft?: VariantDraft | null;
 }) {
   const questionContext =
     resLocals.assessment.type === 'Exam' ? 'student_exam' : 'student_homework';
@@ -136,12 +140,22 @@ export function StudentInstanceQuestion({
                   </div>
                 </div>
               `
-            : QuestionContainer({
-                resLocals,
-                questionContext,
-                questionCopyTargets,
-                showFooter: resLocals.assessment_instance.open ?? false,
-              })}
+            : html`
+                ${restorableDraft == null
+                  ? ''
+                  : UnsavedWorkAlert({
+                      draft: restorableDraft,
+                      csrfToken: resLocals.__csrf_token,
+                      timezone: resLocals.course_instance.display_timezone,
+                    })}
+                ${QuestionContainer({
+                  resLocals,
+                  questionContext,
+                  questionCopyTargets,
+                  showFooter: resLocals.assessment_instance.open ?? false,
+                  autosaveDraft: restorableDraft == null,
+                })}
+              `}
         </div>
 
         <div class="col-lg-3 col-sm-12">
@@ -250,4 +264,38 @@ export function StudentInstanceQuestion({
       </div>
     `,
   });
+}
+
+function UnsavedWorkAlert({
+  draft,
+  csrfToken,
+  timezone,
+}: {
+  draft: VariantDraft;
+  csrfToken: string;
+  timezone: string;
+}) {
+  return html`
+    <div class="alert alert-warning d-flex flex-wrap align-items-center gap-2" role="alert">
+      <div class="flex-grow-1">
+        <strong>You have unsaved work from ${formatDateYMDHM(draft.modified_at, timezone)}.</strong>
+        It was saved automatically but never submitted, so it isn't part of your answer yet.
+      </div>
+      <form method="POST" class="d-flex gap-2">
+        <input type="hidden" name="__csrf_token" value="${csrfToken}" />
+        <input type="hidden" name="__variant_id" value="${draft.variant_id}" />
+        <button type="submit" name="__action" value="restore_draft" class="btn btn-primary">
+          Restore my work
+        </button>
+        <button
+          type="submit"
+          name="__action"
+          value="discard_draft"
+          class="btn btn-outline-secondary"
+        >
+          Discard it
+        </button>
+      </form>
+    </div>
+  `;
 }

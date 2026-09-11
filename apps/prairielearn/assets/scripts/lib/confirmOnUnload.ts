@@ -24,7 +24,11 @@ function skippedFieldsFromForm(form: HTMLFormElement): Set<string> {
   ]);
 }
 
-function getQuestionFormData(form: HTMLFormElement): string {
+/**
+ * Serializes the form fields that represent the student's answer, so that two
+ * snapshots can be compared to detect unsaved changes.
+ */
+export function getQuestionFormData(form: HTMLFormElement): string {
   // Cast FormData since TS does not support this parameter,
   // see https://github.com/microsoft/TypeScript/issues/30584
   const formData = new URLSearchParams(new FormData(form) as any);

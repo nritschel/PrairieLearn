@@ -45,6 +45,7 @@ export function QuestionContainer({
   renderSubmissionSearchParams,
   questionCopyTargets = null,
   aiGradingInfo,
+  autosaveDraft = false,
 }: {
   resLocals: UntypedResLocals;
   questionContext: QuestionContext;
@@ -55,6 +56,12 @@ export function QuestionContainer({
   renderSubmissionSearchParams?: URLSearchParams;
   questionCopyTargets?: CopyTarget[] | null;
   aiGradingInfo?: InstanceQuestionAIGradingInfo;
+  /**
+   * Whether unsaved changes to the form should be autosaved as a draft. Only
+   * enabled on student pages, and suppressed while an older draft is still
+   * waiting for the student to restore or discard it.
+   */
+  autosaveDraft?: boolean;
 }) {
   const {
     question,
@@ -70,6 +77,7 @@ export function QuestionContainer({
     submissions,
     submissionHtmls,
     answerHtml,
+    allowAnswerEditing,
   } = resLocals;
 
   return html`
@@ -88,7 +96,13 @@ export function QuestionContainer({
       )}
       ${question.type === 'Freeform'
         ? html`
-            <form class="question-form" name="question-form" method="POST" autocomplete="off">
+            <form
+              class="question-form"
+              name="question-form"
+              method="POST"
+              autocomplete="off"
+              ${autosaveDraft && allowAnswerEditing ? html`data-autosave-draft="true"` : ''}
+            >
               ${QuestionPanel({
                 resLocals,
                 questionContext,

@@ -11,6 +11,7 @@ import type {
 import type { SubmissionPanels } from '../../src/lib/question-render.types.js';
 import type { GradingJobStatus } from '../../src/models/grading-job.js';
 
+import { autosaveDraft } from './lib/autosaveDraft.js';
 import { confirmOnUnload } from './lib/confirmOnUnload.js';
 import { copyContentModal } from './lib/copyContent.js';
 import { setupCountdown } from './lib/countdown.js';
@@ -66,8 +67,14 @@ onDocumentReady(() => {
   observe('.question-container form.question-form', {
     constructor: HTMLFormElement,
     initialize(form) {
-      const cleanup = confirmOnUnload(form);
-      return { remove: () => cleanup() };
+      const cleanupConfirm = confirmOnUnload(form);
+      const cleanupAutosave = form.dataset.autosaveDraft ? autosaveDraft(form) : null;
+      return {
+        remove: () => {
+          cleanupConfirm();
+          cleanupAutosave?.();
+        },
+      };
     },
   });
 

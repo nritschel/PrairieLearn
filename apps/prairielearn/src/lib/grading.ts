@@ -10,6 +10,7 @@ import { IdSchema, IntervalSchema } from '@prairielearn/zod';
 import { updateCourseInstanceUsagesForSubmission } from '../models/course-instance-usages.js';
 import { insertGradingJob, updateGradingJobAfterGrading } from '../models/grading-job.js';
 import { computeNextAllowedGradingTimeMs } from '../models/instance-question.js';
+import { deleteVariantDraft } from '../models/variant-draft.js';
 import { lockVariant } from '../models/variant.js';
 import * as questionServers from '../question-servers/index.js';
 
@@ -154,6 +155,11 @@ async function insertSubmission({
     );
 
     await updateCourseInstanceUsagesForSubmission({ submission_id, user_id });
+
+    // The submitted answer is now part of the graded record, so any draft of
+    // it is obsolete. Deleting it here keeps the draft and the submission from
+    // diverging if the rest of this transaction rolls back.
+    await deleteVariantDraft({ variant_id });
 
     if (variant.instance_question_id != null) {
       const instanceQuestion = await sqldb.queryRow(

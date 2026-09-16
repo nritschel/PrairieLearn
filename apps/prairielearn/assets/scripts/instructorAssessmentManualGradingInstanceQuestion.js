@@ -23,13 +23,13 @@ onDocumentReady(() => {
       const mainGradingPanel = document.querySelector('.js-main-grading-panel');
       if (!mainGradingPanel) return;
 
-      mainGradingPanel.querySelectorAll('[data-key-binding]').forEach((item) => {
+      for (const item of mainGradingPanel.querySelectorAll('[data-key-binding]')) {
         if (
           item.dataset.keyBinding?.toLowerCase() !== event.key.toLowerCase() ||
           item.matches(':disabled, [readonly]') ||
           !isVisible(item)
         ) {
-          return;
+          continue;
         }
 
         if (item.classList.contains('js-submission-feedback')) {
@@ -39,7 +39,7 @@ onDocumentReady(() => {
         } else {
           item.dispatchEvent(new MouseEvent('click'));
         }
-      });
+      }
     }
   });
   const modal = document.querySelector('#conflictGradingJobModal');
@@ -244,9 +244,10 @@ function computePointsFromRubric(sourceInput = null) {
       if (!manualInput) return;
       const replaceAutoPoints = form.dataset.rubricReplaceAutoPoints === 'true';
       const startingPoints = Number(form.dataset.rubricStartingPoints ?? 0);
-      const itemsSum = Array.from(form.querySelectorAll('.js-selectable-rubric-item:checked'))
-        .map((item) => Number(item.dataset.rubricItemPoints))
-        .reduce((a, b) => a + b, startingPoints);
+      const itemsSum = Array.from(
+        form.querySelectorAll('.js-selectable-rubric-item:checked'),
+        (item) => Number(item.dataset.rubricItemPoints),
+      ).reduce((a, b) => a + b, startingPoints);
       const rubricValue =
         Math.min(
           Math.max(Math.round(itemsSum * 100) / 100, Number(form.dataset.rubricMinPoints)),
@@ -279,7 +280,8 @@ function ensureElementsExist(elements) {
 }
 
 function addInstanceQuestionGroupSelectionDropdownListeners() {
-  const { instanceQuestionId, instanceQuestionGroupsExist } = decodeData('instance-question-data');
+  const { instanceQuestionGroupsExist, manualInstanceQuestionGroupUrl } =
+    decodeData('instance-question-data');
 
   if (!instanceQuestionGroupsExist) {
     // Instance question grouping has not been run yet for the assessment question,
@@ -313,7 +315,7 @@ function addInstanceQuestionGroupSelectionDropdownListeners() {
       description: selectedGroupDescription,
     } = selectedGroupDropdownItem.dataset;
 
-    await fetch(`${instanceQuestionId}/manual_instance_question_group`, {
+    await fetch(manualInstanceQuestionGroupUrl, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',

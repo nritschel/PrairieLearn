@@ -5,6 +5,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import { ECRClient } from '@aws-sdk/client-ecr';
 import { S3 } from '@aws-sdk/client-s3';
@@ -17,7 +18,6 @@ import debugfn from 'debug';
 import Docker from 'dockerode';
 import express, { type Response } from 'express';
 import asyncHandler from 'express-async-handler';
-import { type Entry } from 'fast-glob';
 import minimist from 'minimist';
 import * as shlex from 'shlex';
 import { z } from 'zod';
@@ -71,6 +71,7 @@ const WorkspaceSettingsRowSchema = z.object({
   workspace_args: z.string().nullable(),
   workspace_enable_networking: z.boolean().nullable(),
   workspace_environment: z.record(z.string(), z.any()).nullable(),
+  workspace_url_rewrite: z.boolean().nullable(),
 });
 
 // _getWorkspaceSettings transforms WorkspaceSettingsRowSchema into this shape.
@@ -106,6 +107,17 @@ const sql = sqldb.loadSqlEquiv(import.meta.url);
 const debug = debugfn('prairielearn:interface');
 const docker = new Docker();
 
+async function updateLoadCount() {
+  const params = { instance_id: workspace_server_settings.instance_id };
+
+  await sqldb.runInTransactionAsync(async () => {
+    // Lock in a separate statement so the recount gets a fresh snapshot after
+    // any concurrent workspace assignment finishes.
+    await sqldb.execute(sql.lock_workspace_host_for_load_count_update, params);
+    await sqldb.execute(sql.update_load_count, params);
+  });
+}
+
 const app = express();
 app.use(Sentry.requestHandler());
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -118,9 +130,7 @@ app.get(
 
     let db_status: string | null | undefined;
     try {
-      await sqldb.execute(sql.update_load_count, {
-        instance_id: workspace_server_settings.instance_id,
-      });
+      await updateLoadCount();
       db_status = 'ok';
     } catch {
       db_status = null;
@@ -223,6 +233,7 @@ async
         password: config.postgresqlPassword ?? undefined,
         max: config.postgresqlPoolSize,
         idleTimeoutMillis: config.postgresqlIdleTimeoutMillis,
+        ssl: config.postgresqlSsl,
       };
       logger.verbose(
         `Connecting to database ${pgConfig.user}@${pgConfig.host}:${pgConfig.database}`,
@@ -255,9 +266,7 @@ async
         try {
           await pruneStoppedContainers();
           await pruneRunawayContainers();
-          await sqldb.execute(sql.update_load_count, {
-            instance_id: workspace_server_settings.instance_id,
-          });
+          await updateLoadCount();
         } catch (err) {
           logger.error('Error pruning containers', err);
           Sentry.captureException(err);
@@ -645,17 +654,14 @@ async function _getWorkspaceSettings(workspace_id: string | number): Promise<Wor
   }
 
   const settings = {
-    workspace_image: row.workspace_image,
-    workspace_port: row.workspace_port,
-    workspace_home: row.workspace_home,
-    workspace_graded_files: row.workspace_graded_files,
+    ...row,
     workspace_args: row.workspace_args || '',
     workspace_enable_networking: !!row.workspace_enable_networking,
     // Convert {key: 'value'} to ['key=value'] and {key: null} to ['key'] for Docker API
     workspace_environment: Object.entries(workspace_environment).map(([k, v]) =>
       v === null ? k : `${k}=${v}`,
     ),
-  };
+  } satisfies WorkspaceSettings;
 
   if (config.cacheImageRegistry) {
     const repository = new DockerName(settings.workspace_image);
@@ -836,9 +842,15 @@ async function _createContainer(workspace: Workspace): Promise<Docker.Container>
   const workspaceJobPath = path.join(jobDirectory, remote_name, 'current');
 
   const [containerPath, workspacePort] = await run(async () => {
-    if (settings.workspace_home != null && settings.workspace_port != null) {
+    // If all three of these are known, inspect is not necessary.
+    if (
+      settings.workspace_home != null &&
+      settings.workspace_port != null &&
+      settings.workspace_url_rewrite != null
+    ) {
       return [settings.workspace_home, settings.workspace_port];
     }
+
     const inspectResults = await docker.getImage(settings.workspace_image).inspect();
     const labels = inspectResults.Config.Labels;
     const home = settings.workspace_home ?? labels?.['com.prairielearn.workspace.home'];
@@ -857,6 +869,24 @@ async function _createContainer(workspace: Workspace): Promise<Docker.Container>
     if (Number.isNaN(port) || port <= 0 || port > 65535) {
       throw new SafeForStudentError('Workspace port is not a valid port number');
     }
+
+    if (settings.workspace_url_rewrite == null) {
+      // If the url_rewrite setting was not previously set, we'll use the label
+      // value and default to true if not specified. This value is not used
+      // here, but in the proxy middleware logic, so we save it to the database
+      // for later reference.
+      const urlRewrite =
+        labels?.['com.prairielearn.workspace.rewrite-url']?.toLowerCase() ?? 'true';
+
+      if (!['true', 'false'].includes(urlRewrite)) {
+        throw new SafeForStudentError('Workspace URL rewrite setting is not a valid boolean value');
+      }
+      await sqldb.execute(sql.update_workspace_url_rewrite, {
+        workspace_id: workspace.id,
+        url_rewrite: urlRewrite === 'true',
+      });
+    }
+
     return [home, port];
   });
   const args = settings.workspace_args.trim();
@@ -936,9 +966,7 @@ async function _createContainer(workspace: Workspace): Promise<Docker.Container>
     },
   });
 
-  await sqldb.execute(sql.update_load_count, {
-    instance_id: workspace_server_settings.instance_id,
-  });
+  await updateLoadCount();
 
   return container;
 }
@@ -1128,49 +1156,28 @@ async function sendGradedFilesArchive(workspace_id: string | number, res: Respon
   const zipName = `${workspace.remote_name}-${timestamp}.zip`;
   const workspaceDir = path.join(config.workspaceHostHomeDirRoot, workspace.remote_name, 'current');
 
-  let gradedFiles: Entry[] | undefined;
-  try {
-    gradedFiles = await workspaceUtils.getWorkspaceGradedFiles(
-      workspaceDir,
-      workspace_graded_files,
-      {
-        maxFiles: config.workspaceMaxGradedFilesCount,
-        maxSize: config.workspaceMaxGradedFilesSize,
-      },
-    );
-  } catch (err: any) {
-    res.status(500).send(err.message);
-    return;
-  }
+  await using gradedFiles = await workspaceUtils
+    .openWorkspaceGradedFiles(workspaceDir, workspace_graded_files, {
+      maxFiles: config.workspaceMaxGradedFilesCount,
+      maxSize: config.workspaceMaxGradedFilesSize,
+    })
+    .catch((err: Error) => {
+      res.status(500).send(err.message);
+      return null;
+    });
+  if (gradedFiles == null) return;
 
   // Stream the archive back to the client as it's generated.
   res.attachment(zipName).status(200);
   const archive = new ZipArchive();
-  archive.pipe(res);
-
-  archive.on('error', (err) => {
-    logger.error('Error creating archive', err);
-    Sentry.captureException(err);
-
-    // Since we've probably already sent some data to the client, we can't do
-    // anything to gracefully let them know that we encountered an error.
-    // Instead, we'll just destroy the socket so that they pick up an error
-    // and handle that however they want.
-    res.socket?.destroy();
-  });
+  const archiveCompleted = pipeline(archive, res);
 
   for (const file of gradedFiles) {
-    try {
-      const filePath = path.join(workspaceDir, file.path);
-      archive.file(filePath, { name: file.path });
-      debug(`Sending ${file.path}`);
-    } catch {
-      logger.warn(`Graded file ${file.path} does not exist.`);
-      continue;
-    }
+    archive.append(file.createReadStream(), { name: file.path });
+    debug(`Sending ${file.path}`);
   }
 
-  await archive.finalize();
+  await Promise.all([archive.finalize(), archiveCompleted]);
 }
 
 async function sendLogs(workspaceId: string | number, res: Response) {

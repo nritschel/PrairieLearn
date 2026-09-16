@@ -452,7 +452,7 @@ export abstract class Editor {
     debug('Checking folders', reverseFolders);
 
     let seenNonemptyFolder = false;
-    for (const [index] of reverseFolders.entries()) {
+    for (const index of reverseFolders.keys()) {
       if (!seenNonemptyFolder) {
         const delPath = path.join(rootDirectory, ...idSplit.slice(0, idSplit.length - 1 - index));
         debug('Checking', delPath);
@@ -1104,7 +1104,8 @@ async function updateInfoAssessmentFilesForTargetCourse(
 
     // We do not want to preserve certain settings when copying an assessment to another course
     delete infoJson.shareSourcePublicly;
-    infoJson.allowAccess = [];
+    delete infoJson.allowAccess;
+    infoJson.accessControl = [];
 
     function shouldAddSharingPrefix(qid: string) {
       return qid && !qid.startsWith('@') && questionsToImport.has(qid);
@@ -2686,20 +2687,23 @@ export interface QtiImportAssessmentData {
 }
 
 export class QtiImportEditor extends Editor {
-  private course_instance: CourseInstance;
+  private course_instance: CourseInstance | null;
   private assessments: QtiImportAssessmentData[];
   private questions: QtiImportQuestionData[];
 
   constructor(
-    params: BaseEditorOptions<{ course_instance: CourseInstance }> & {
+    params: BaseEditorOptions & {
+      course_instance: CourseInstance | null;
       assessments: QtiImportAssessmentData[];
       questions?: QtiImportQuestionData[];
     },
   ) {
-    const { course_instance } = params.locals;
+    const { course_instance } = params;
     super({
       ...params,
-      description: `${course_instance.short_name}: Import QTI content`,
+      description: course_instance
+        ? `${course_instance.short_name}: Import QTI content`
+        : 'Import QTI content',
     });
     this.course_instance = course_instance;
     this.assessments = params.assessments;
@@ -2707,31 +2711,28 @@ export class QtiImportEditor extends Editor {
   }
 
   async write() {
-    assert(this.course_instance.short_name, 'course_instance.short_name is required');
+    const courseInstanceDir = run(() => {
+      if (!this.course_instance) return null;
+      assert(this.course_instance.short_name, 'course_instance.short_name is required');
+      return path.join(this.course.path, 'courseInstances', this.course_instance.short_name);
+    });
 
     // If the course instance is publicly shared, imported assessments and
     // questions must also be marked as shared to avoid a sync error.
-    const ciConfigPath = path.join(
-      this.course.path,
-      'courseInstances',
-      this.course_instance.short_name,
-      'infoCourseInstance.json',
-    );
-    let shareSourcePublicly = false;
-    try {
-      const ciConfig = JSON.parse(await fs.readFile(ciConfigPath, 'utf-8'));
-      shareSourcePublicly = ciConfig.shareSourcePublicly === true;
-    } catch {
-      // Config may not exist yet or may be malformed; default to not sharing.
-    }
+    const shareSourcePublicly = await run(async () => {
+      if (!courseInstanceDir) return false;
+      try {
+        const ciConfig = JSON.parse(
+          await fs.readFile(path.join(courseInstanceDir, 'infoCourseInstance.json'), 'utf-8'),
+        );
+        return ciConfig.shareSourcePublicly === true;
+      } catch {
+        // Config may not exist yet or may be malformed; default to not sharing.
+        return false;
+      }
+    });
 
     const questionsBaseDir = path.join(this.course.path, 'questions');
-    const assessmentsBaseDir = path.join(
-      this.course.path,
-      'courseInstances',
-      this.course_instance.short_name,
-      'assessments',
-    );
 
     // Pre-validate all paths before writing anything to avoid partial state.
     const existingQids = await discoverInfoDirs(questionsBaseDir, 'info.json');
@@ -2790,23 +2791,30 @@ export class QtiImportEditor extends Editor {
       }
     }
 
-    for (const assessment of this.assessments) {
-      const assessmentDir = path.join(assessmentsBaseDir, assessment.directoryName);
-      if (!contains(assessmentsBaseDir, assessmentDir)) {
-        throw new AugmentedError('Invalid assessment folder path', {
-          info: html`
-            <p>The assessment folder path</p>
-            <div class="container">
-              <pre class="bg-dark text-white rounded p-2">${assessmentDir}</pre>
-            </div>
-            <p>must be inside the assessments directory</p>
-            <div class="container">
-              <pre class="bg-dark text-white rounded p-2">${assessmentsBaseDir}</pre>
-            </div>
-          `,
-        });
-      }
-    }
+    const assessmentWrites = run(() => {
+      if (this.assessments.length === 0) return [];
+      // Assessments live under a course instance, so importing any requires one.
+      assert(courseInstanceDir, 'A course instance is required to import assessments');
+      const assessmentsBaseDir = path.join(courseInstanceDir, 'assessments');
+      return this.assessments.map((assessment) => {
+        const assessmentDir = path.join(assessmentsBaseDir, assessment.directoryName);
+        if (!contains(assessmentsBaseDir, assessmentDir)) {
+          throw new AugmentedError('Invalid assessment folder path', {
+            info: html`
+              <p>The assessment folder path</p>
+              <div class="container">
+                <pre class="bg-dark text-white rounded p-2">${assessmentDir}</pre>
+              </div>
+              <p>must be inside the assessments directory</p>
+              <div class="container">
+                <pre class="bg-dark text-white rounded p-2">${assessmentsBaseDir}</pre>
+              </div>
+            `,
+          });
+        }
+        return { assessment, assessmentDir };
+      });
+    });
 
     const pathsToAdd: string[] = [];
 
@@ -2843,9 +2851,7 @@ export class QtiImportEditor extends Editor {
       pathsToAdd.push(qDir);
     }
 
-    for (const assessment of this.assessments) {
-      // Write the assessment (path already validated above).
-      const assessmentDir = path.join(assessmentsBaseDir, assessment.directoryName);
+    for (const { assessment, assessmentDir } of assessmentWrites) {
       const aInfoJson = { ...assessment.infoJson };
       if (shareSourcePublicly) {
         aInfoJson.shareSourcePublicly = true;
@@ -2860,7 +2866,9 @@ export class QtiImportEditor extends Editor {
 
     return {
       pathsToAdd,
-      commitMessage: `${this.course_instance.short_name}: import QTI content`,
+      commitMessage: this.course_instance
+        ? `${this.course_instance.short_name}: import QTI content`
+        : 'import QTI content',
     };
   }
 }

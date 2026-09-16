@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 
-import { booleanFormat, integerFormat } from '../helpers.ts';
-import type { ElementSchemaModule } from '../types.ts';
+import { booleanFormat, integerFormat } from '../helpers.js';
+import type { ElementSchemaModule } from '../types.js';
 
 const partialCreditAttribute = () =>
   z.union([
@@ -21,6 +21,7 @@ const plCheckboxAnswerAttributesSchema = z
 
 const plCheckboxAttributesSchema = z
   .object({
+    'allow-blank': booleanFormat().optional(),
     'answers-name': z.string(),
     'detailed-help-text': booleanFormat().optional(),
     display: z.enum(['block', 'inline']).optional(),

@@ -68,7 +68,7 @@ window.PLDrawingApi = {
     // Add the clientFilesElement directory.
     url.pathname += '/clientFilesElement/';
 
-    return url.toString();
+    return url.href;
   })(),
 
   /**
@@ -157,27 +157,13 @@ window.PLDrawingApi = {
     const canvas_height = Number.parseFloat(elem_options.height);
     const html_input = $(root_elem).find('input');
 
-    const parseElemOptions = function (elem) {
-      const opts = JSON.parse(elem.getAttribute('opts'));
-
-      // Parse any numerical options from string to floating point
-      for (const key in opts) {
-        if (/^type$|^label|color|^plist$/.test(key)) continue; // skip parsing for string-only options
-        const parsed = Number(opts[key]);
-        if (!Number.isNaN(parsed)) {
-          opts[key] = parsed;
-        }
-      }
-      return opts;
-    };
-
     // Set all button icons
     const drawing_btns = $(root_elem).find('button');
     const element_base_url = elem_options['element_client_files'];
     const clientFilesBase = this.clientFilesBase;
     drawing_btns.each(function (i, btn) {
       const img = btn.children[0];
-      const opts = parseElemOptions(img.parentNode);
+      const opts = JSON.parse(btn.getAttribute('opts'));
       const elem = window.PLDrawingApi.getElement(opts.type);
       const elem_name = opts.type;
       if (elem !== null) {
@@ -195,6 +181,7 @@ window.PLDrawingApi = {
         const image_tooltip = elem.get_button_tooltip(opts);
         if (image_tooltip !== null) {
           btn.setAttribute('title', image_tooltip);
+          btn.setAttribute('aria-label', image_tooltip);
         }
         if (!elem_options.editable) {
           btn.disabled = true;

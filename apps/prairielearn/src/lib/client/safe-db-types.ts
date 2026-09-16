@@ -17,6 +17,7 @@
 
 import { z } from 'zod';
 
+import { AssessmentInstanceAuthzResultSchema as RawAssessmentInstanceAuthzResultSchema } from '../assessment-access-control/authz-result.js';
 import {
   AccessTokenSchema as RawAccessTokenSchema,
   AlternativePoolSchema as RawAlternativePoolSchema,
@@ -43,7 +44,6 @@ import {
   RubricItemSchema as RawRubricItemSchema,
   RubricSchema as RawRubricSchema,
   SharingSetSchema as RawSharingSetSchema,
-  SprocAuthzAssessmentInstanceSchema as RawSprocAuthzAssessmentInstanceSchema,
   StudentLabelSchema as RawStudentLabelSchema,
   TagSchema as RawTagSchema,
   GroupSchema as RawTeamSchema,
@@ -154,7 +154,7 @@ export type StudentAssessmentInstance__UNSAFE = z.infer<
 
 /** Assessment Instance Authz Results */
 export const RawStudentAssessmentInstanceAuthzResultSchema =
-  RawSprocAuthzAssessmentInstanceSchema.pick({
+  RawAssessmentInstanceAuthzResultSchema.pick({
     active: true,
     authorized_edit: true,
     credit_date_string: true,
@@ -344,12 +344,12 @@ export const RawStaffEnrollmentSchema = RawEnrollmentSchema.pick({
   created_at: true,
   first_joined_at: true,
   id: true,
-  lti_managed: true,
-  pending_lti13_email: true,
-  pending_lti13_instance_id: true,
-  pending_lti13_name: true,
+  pending_email: true,
+  pending_lti13_course_instance_id: true,
   pending_lti13_sub: true,
+  pending_name: true,
   pending_uid: true,
+  pending_uin: true,
   status: true,
   user_id: true,
 });
@@ -361,7 +361,6 @@ export const RawStudentEnrollmentSchema = RawStaffEnrollmentSchema.pick({
   created_at: true,
   first_joined_at: true,
   id: true,
-  lti_managed: true,
   pending_uid: true,
   status: true,
   user_id: true,

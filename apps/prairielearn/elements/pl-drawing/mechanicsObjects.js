@@ -1,4 +1,4 @@
-/* eslint-disable no-alert, unicorn/no-immediate-mutation */
+/* eslint-disable no-alert */
 /* global _, fabric, Sylvester, PLDrawingBaseElement, MathJax */
 
 const $V = Sylvester.Vector.create;
@@ -20,6 +20,11 @@ const vec2pt = function (v) {
 };
 
 const mechanicsObjects = {};
+
+const isTrueBooleanOption = function (value) {
+  // Existing saved submissions may contain string booleans; new generated options use booleans.
+  return value === true || value === 'true';
+};
 
 /**
  * New object types.
@@ -299,24 +304,22 @@ mechanicsObjects.CollarRod = fabric.util.createClass(fabric.Object, {
       ctx.lineTo(p16.e(1), p16.e(2));
       ctx.lineTo(p17.e(1), p17.e(2));
       ctx.lineTo(p18.e(1), p18.e(2));
-      ctx.lineTo(p8.e(1), p8.e(2));
     } else {
       ctx.arcTo(p5.e(1), p5.e(2), p6.e(1), p6.e(2), d);
       ctx.arcTo(p6.e(1), p6.e(2), p7.e(1), p7.e(2), d);
-      ctx.lineTo(p8.e(1), p8.e(2));
     }
+    ctx.lineTo(p8.e(1), p8.e(2));
     ctx.lineTo(p9.e(1), p9.e(2));
     if (this.collar1) {
       ctx.lineTo(p19.e(1), p19.e(2));
       ctx.lineTo(p20.e(1), p20.e(2));
       ctx.lineTo(p13.e(1), p13.e(2));
       ctx.lineTo(p14.e(1), p14.e(2));
-      ctx.lineTo(p2.e(1), p2.e(2));
     } else {
       ctx.arcTo(p11.e(1), p11.e(2), p12.e(1), p12.e(2), d);
       ctx.arcTo(p12.e(1), p12.e(2), p1.e(1), p1.e(2), d);
-      ctx.lineTo(p2.e(1), p2.e(2));
     }
+    ctx.lineTo(p2.e(1), p2.e(2));
     ctx.closePath();
     ctx.strokeStyle = this.strokeColor;
     this.fill = this.color;
@@ -491,7 +494,7 @@ mechanicsObjects.TShapeRod = fabric.util.createClass(fabric.Object, {
   get_distance(angle, d) {
     if (Math.abs(angle) < 1e-4) {
       return 0;
-    } else if (Math.abs(angle) - Math.pi / 2 < 1e-4 || Math.abs(angle) - (3 * Math.pi) / 2 < 1e-4) {
+    } else if (Math.abs(angle) - Math.PI / 2 < 1e-4 || Math.abs(angle) - (3 * Math.PI) / 2 < 1e-4) {
       return d;
     } else {
       return d / Math.sin(angle) - d / Math.tan(angle);
@@ -1074,7 +1077,7 @@ mechanicsObjects.DistTrianLoad = fabric.util.createClass(fabric.Object, {
   initialize(options) {
     this.callSuper('initialize', options);
     this.spacing = options.spacing;
-    this.anchor_is_tail = options.anchor_is_tail === 'true';
+    this.anchor_is_tail = isTrueBooleanOption(options.anchor_is_tail);
     this.w1 = options.w1;
     this.w2 = options.w2;
     this.width = options.range;
@@ -3330,20 +3333,20 @@ mechanicsObjects.byType['pl-distributed-load'] = class extends PLDrawingBaseElem
   }
 
   static get_button_icon(options) {
-    const wdef = { w1: 60, w2: 60, anchor_is_tail: false };
+    const wdef = { w1: 60, w2: 60 };
     const opts = { ...wdef, ...options };
     const w1 = opts['w1'];
     const w2 = opts['w2'];
-    const anchor = opts['anchor_is_tail'];
+    const anchor = isTrueBooleanOption(opts['anchor_is_tail']);
 
     let file_name;
     if (w1 === w2) {
       file_name = 'DUD';
-    } else if (w1 < w2 && anchor === 'true') {
+    } else if (w1 < w2 && anchor) {
       file_name = 'DTDA';
     } else if (w1 < w2) {
       file_name = 'DTUD';
-    } else if (w1 > w2 && anchor === 'true') {
+    } else if (w1 > w2 && anchor) {
       file_name = 'DTUA';
     } else {
       file_name = 'DTDD';

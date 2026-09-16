@@ -14,6 +14,7 @@ import {
   ArrayFromStringOrArraySchema,
   BooleanFromCheckboxSchema,
   IntegerFromStringOrEmptySchema,
+  parseRequestBody,
 } from '@prairielearn/zod';
 
 import { PageLayout } from '../../components/PageLayout.js';
@@ -26,6 +27,7 @@ import {
   StaffTagSchema,
   StaffTopicSchema,
 } from '../../lib/client/safe-db-types.js';
+import { getQuestionPreviewUrl } from '../../lib/client/url.js';
 import { copyQuestionBetweenCourses } from '../../lib/copy-content.js';
 import { EnumGradingMethodSchema } from '../../lib/db-types.js';
 import { getOriginalHash } from '../../lib/editorUtil.js';
@@ -178,8 +180,9 @@ router.post(
       }
       req.body.preferences = preferencesArray.filter(Boolean);
 
-      const body = z
-        .object({
+      const body = parseRequestBody(
+        req,
+        z.object({
           orig_hash: z.string(),
           qid: z.string(),
           title: z.string(),
@@ -247,8 +250,8 @@ router.post(
           share_publicly: BooleanFromCheckboxSchema,
           share_source_publicly: BooleanFromCheckboxSchema,
           sharing_sets: ArrayFromStringOrArraySchema.optional(),
-        })
-        .parse(req.body);
+        }),
+      );
 
       const shortNameValidation = validateShortName(body.qid, res.locals.question.qid ?? undefined);
       if (!shortNameValidation.valid) {
@@ -265,6 +268,33 @@ router.post(
           question_id: res.locals.question.id,
           course_id: res.locals.course.id,
         });
+        const sharingConstraints = await selectQuestionSharingConstraints({
+          question_id: res.locals.question.id,
+          course_id: res.locals.course.id,
+        });
+
+        if (
+          res.locals.question.share_publicly &&
+          !body.share_publicly &&
+          sharingConstraints.used_in_other_course
+        ) {
+          throw new error.HttpStatusError(
+            400,
+            'This question is used by another course, so it cannot be un-shared publicly.',
+          );
+        }
+
+        if (
+          sharingConstraints.used_in_same_course_public_assessment &&
+          !body.share_publicly &&
+          !body.share_source_publicly
+        ) {
+          throw new error.HttpStatusError(
+            400,
+            'This question is used in a publicly shared assessment, so it must remain publicly shared or have its source publicly shared for copying.',
+          );
+        }
+
         const validSetNames = new Set(sharingSetRows.map((r) => r.name));
         const requestedSetNames = new Set(body.sharing_sets);
 
@@ -626,6 +656,11 @@ router.get(
 
     const questionGHLink = courseRepoContentUrl(course, `questions/${question.qid}`);
 
+    const publicLink = new URL(
+      getQuestionPreviewUrl({ courseId: course.id, questionId: question.id, isPublic: true }),
+      host,
+    ).href;
+
     const qids = await sqldb.queryScalars(sql.qids, { course_id: course.id }, z.string());
 
     const assessmentsWithQuestion = await sqldb.queryRows(
@@ -691,6 +726,7 @@ router.get(
               courseInstance={courseInstance}
               csrfToken={__csrf_token}
               questionGHLink={questionGHLink}
+              publicLink={publicLink}
               questionTest={{ path: questionTestPath, csrfToken: questionTestCsrfToken }}
               questionTags={parsedQuestionTags}
               qids={qids}

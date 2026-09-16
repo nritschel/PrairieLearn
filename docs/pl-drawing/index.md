@@ -457,14 +457,14 @@ The element `pl-drawing-group` combines several elements as a group, to allow gr
 ```html
 <pl-drawing>
   <pl-drawing-initial>
+    <pl-drawing-group visible="true">
+      <!-- objects here will be displayed -->
+    </pl-drawing-group>
 
-      <pl-drawing-group visible="true">
-          <!-- objects here will be displayed -->
-      </pl-drawing-group>
-
-      <pl-drawing-group visible="false">
-          <!-- objects here will not be displayed -->
-      </pl-drawing-group>
+    <pl-drawing-group visible="false">
+      <!-- objects here will not be displayed -->
+    </pl-drawing-group>
+  </pl-drawing-initial>
 </pl-drawing>
 ```
 
@@ -1911,7 +1911,7 @@ class Point(BaseElement):
             "originY": "center",
             "fill": color,
             "selectable": drawing_defaults["selectable"],
-            "evented": drawing_defaults["selectable"]
+            "evented": drawing_defaults["selectable"],
         }
 
     def is_gradable():

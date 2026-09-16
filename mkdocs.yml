@@ -318,6 +318,7 @@ nav:
       - dev-guide/guide.md
       - 'Migrations': 'dev-guide/migrations/'
       - 'Server configuration': 'dev-guide/configJson.md'
+      - 'Key rotation': 'dev-guide/keyRotation.md'
       - 'Building question elements': 'devElements.md'
       - 'Building element extensions': 'elementExtensions.md'
       - 'Code execution': 'codeExecution.md'
@@ -348,7 +349,6 @@ not_in_nav: |
   elements/pl-variable-score.md
   dev-guide/contrib/*
   assessment/accessControlModern.md
-  importingContent.md
 
 validation:
   omitted_files: warn

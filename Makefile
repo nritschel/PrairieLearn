@@ -168,17 +168,23 @@ lint-sql-migrations:
 	@uv run squawk apps/prairielearn/src/migrations/*.sql
 lint-actions:
 	@actionlint
+lint-actions-version:
+	@pnpm --filter @prairielearn/pin-github-actions build
+	@pnpm exec pin-github-actions --check
 lint-changeset:
 	@pnpm changeset status
 
 # Runs additional third-party formatters
-format-all: format-js format-python format-sql format-mustache
+format-all: format-js format-python format-sql format-mustache format-actions-version
 
 fix: fix-js fix-python
 format: format-js format-python
 
 format-sql:
 	@uv run sqlfluff fix
+format-actions-version:
+	@pnpm --filter @prairielearn/pin-github-actions build
+	@pnpm exec pin-github-actions
 
 fix-js:
 	@pnpm eslint --ext js --fix "**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,html,mustache}"
@@ -220,14 +226,13 @@ typecheck-sql:
 
 changeset:
 	@pnpm changeset
-	@pnpm prettier --write ".changeset/**/*.md"
 
 lint-docs: lint-d2 lint-links lint-markdown lint-docs-links
 
 build-docs:
 	@NO_MKDOCS_2_WARNING=1 DISABLE_MKDOCS_2_WARNING=true uv run mkdocs build --strict
 dev-docs:
-	@NO_MKDOCS_2_WARNING=1 DISABLE_MKDOCS_2_WARNING=true uv run mkdocs serve --livereload
+	@NO_MKDOCS_2_WARNING=1 DISABLE_MKDOCS_2_WARNING=true uv run mkdocs serve --livereload --dev-addr "127.0.0.1:$$(( $${CONDUCTOR_PORT:-7999} + 1 ))"
 
 format-d2:
 	@d2 fmt docs/**/*.d2

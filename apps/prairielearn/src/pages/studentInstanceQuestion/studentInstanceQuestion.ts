@@ -4,6 +4,7 @@ import { type Request, type Response, Router } from 'express';
 
 import { HttpStatusError } from '@prairielearn/error';
 import { loadSqlEquiv, queryOptionalScalar } from '@prairielearn/postgres';
+import { run } from '@prairielearn/run';
 import { IdSchema } from '@prairielearn/zod';
 
 import checkPlanGrantsForQuestion from '../../ee/middlewares/checkPlanGrantsForQuestion.js';
@@ -16,14 +17,20 @@ import { getQuestionGroupPermissions } from '../../lib/groups.js';
 import { idsEqual } from '../../lib/id.js';
 import { reportIssueFromForm } from '../../lib/issues.js';
 import { getAndRenderVariant, renderPanelsForSubmission } from '../../lib/question-render.js';
-import { processSubmission } from '../../lib/question-submission.js';
-import { typedAsyncHandler } from '../../lib/res-locals.js';
+import {
+  processDraftDiscard,
+  processDraftRestore,
+  processDraftSave,
+  processSubmission,
+} from '../../lib/question-submission.js';
+import { type ResLocalsForPage, typedAsyncHandler } from '../../lib/res-locals.js';
 import { getCanonicalHost } from '../../lib/url.js';
 import clientFingerprint from '../../middlewares/clientFingerprint.js';
 import { enterpriseOnly } from '../../middlewares/enterpriseOnly.js';
 import { logPageView } from '../../middlewares/logPageView.js';
 import { selectEnabledToolsForInstanceQuestion } from '../../models/assessment.js';
 import { selectUserById } from '../../models/user.js';
+import { selectOptionalVariantDraft } from '../../models/variant-draft.js';
 import { selectAndAuthzVariant, selectVariantsByInstanceQuestion } from '../../models/variant.js';
 
 import { StudentInstanceQuestion } from './studentInstanceQuestion.html.js';
@@ -51,8 +58,40 @@ router.use((req, res, next) => {
     return;
   }
 
+  // Autosaves post to this same path but don't record a log entry, and they
+  // happen often enough that treating each one as a page visit would distort
+  // the fingerprint change count that course staff use to spot a student
+  // moving between machines.
+  if (req.method === 'POST' && req.body?.__action === 'save_draft') {
+    next();
+    return;
+  }
+
   clientFingerprint(req, res, next);
 });
+
+/**
+ * Drafts are only accepted when the student could have saved a real submission
+ * instead. The `save` path relies on `insertSubmission` to enforce most of
+ * this, but drafts never reach that transaction, so we check here.
+ */
+function checkDraftEditingAllowed(resLocals: ResLocalsForPage<'instance-question'>) {
+  if (!resLocals.assessment_instance.open) {
+    throw new HttpStatusError(403, 'Assessment is not open');
+  }
+  if (!resLocals.instance_question.open) {
+    throw new HttpStatusError(403, 'Question is not open');
+  }
+  if (!resLocals.authz_result.active) {
+    throw new HttpStatusError(403, 'This assessment is not accepting submissions at this time.');
+  }
+  if (resLocals.instance_question_info.question_access_mode === 'read_only_lockpoint') {
+    throw new HttpStatusError(403, 'This question is read-only');
+  }
+  if (resLocals.assessment.type === 'Exam' && resLocals.authz_result.time_limit_expired) {
+    throw new HttpStatusError(403, 'Time limit is expired');
+  }
+}
 
 async function processFileUpload(req: Request, res: Response) {
   if (!res.locals.assessment_instance.open) {
@@ -200,7 +239,24 @@ router.post(
       throw new HttpStatusError(403, 'Not authorized');
     }
 
-    if (req.body.__action === 'grade' || req.body.__action === 'save') {
+    if (req.body.__action === 'save_draft') {
+      checkDraftEditingAllowed(res.locals);
+      await processDraftSave(req, res);
+      res.sendStatus(204);
+    } else if (req.body.__action === 'restore_draft') {
+      checkDraftEditingAllowed(res.locals);
+      const variant_id = await processDraftRestore(req, res);
+      res.redirect(
+        `${res.locals.urlPrefix}/instance_question/${res.locals.instance_question.id}/` +
+          (variant_id == null ? '' : `?variant_id=${variant_id}`),
+      );
+    } else if (req.body.__action === 'discard_draft') {
+      checkDraftEditingAllowed(res.locals);
+      const variant_id = await processDraftDiscard(req, res);
+      res.redirect(
+        `${res.locals.urlPrefix}/instance_question/${res.locals.instance_question.id}/?variant_id=${variant_id}`,
+      );
+    } else if (req.body.__action === 'grade' || req.body.__action === 'save') {
       if (res.locals.assessment.type === 'Exam') {
         if (res.locals.authz_result.time_limit_expired) {
           throw new HttpStatusError(
@@ -355,6 +411,18 @@ router.get(
 
     const renderState = await getAndRenderVariant(variant_id, null, res.locals);
 
+    // A draft that is newer than the most recent submission is work the student
+    // never got to save, so offer to restore it. Anything older has already
+    // been superseded by a real save.
+    const restorableDraft = await run(async () => {
+      if (!renderState.allowAnswerEditing) return null;
+      const draft = await selectOptionalVariantDraft({ variant_id: renderState.variant.id });
+      if (draft == null) return null;
+      const lastSubmissionDate = renderState.submission?.date;
+      if (lastSubmissionDate != null && draft.modified_at <= lastSubmissionDate) return null;
+      return draft;
+    });
+
     await logPageView('studentInstanceQuestion', req, res);
     const questionCopyTargets = await getQuestionCopyTargets({
       course: res.locals.course,
@@ -407,6 +475,7 @@ router.get(
         lastGrader,
         questionCopyTargets,
         enabledTools,
+        restorableDraft,
       }),
     );
   }),

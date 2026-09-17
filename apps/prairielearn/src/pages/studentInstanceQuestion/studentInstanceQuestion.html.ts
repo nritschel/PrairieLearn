@@ -1,5 +1,7 @@
 import { EncodedData } from '@prairielearn/browser-utils';
+import { formatDate } from '@prairielearn/formatter';
 import { html, unsafeHtml } from '@prairielearn/html';
+import { generatePrefixCsrfToken } from '@prairielearn/signed-token';
 
 import {
   RegenerateInstanceAlert,
@@ -18,8 +20,14 @@ import { QuestionContainer, QuestionTitle } from '../../components/QuestionConta
 import { QuestionNavSideGroup } from '../../components/QuestionNavigation.js';
 import { QuestionScorePanel } from '../../components/QuestionScore.js';
 import { assetPath, compiledScriptTag, nodeModulesAssetPath } from '../../lib/assets.js';
+import {
+  UNSAVED_WORK_INTERVAL_MS,
+  UNSAVED_WORK_MAX_BYTES,
+  type UnsavedWorkData,
+} from '../../lib/client/unsaved-work.js';
+import { config } from '../../lib/config.js';
 import { type CopyTarget } from '../../lib/copy-content.js';
-import type { AssessmentTool, User } from '../../lib/db-types.js';
+import type { AssessmentTool, SubmissionDraft, User } from '../../lib/db-types.js';
 import { getRoleNamesForUser } from '../../lib/groups.shared.js';
 import type { ResLocalsInstanceQuestionRender } from '../../lib/question-render.types.js';
 import type { ResLocalsForPage } from '../../lib/res-locals.js';
@@ -32,6 +40,8 @@ export function StudentInstanceQuestion({
   lastGrader,
   questionCopyTargets,
   enabledTools = [],
+  unsavedWorkDraft = null,
+  recordUnsavedWork = false,
 }: {
   resLocals: ResLocalsForPage<'instance-question'>;
   renderState: ResLocalsInstanceQuestionRender | null;
@@ -40,12 +50,22 @@ export function StudentInstanceQuestion({
   lastGrader?: User | null;
   questionCopyTargets?: CopyTarget[] | null;
   enabledTools?: AssessmentTool[];
+  unsavedWorkDraft?: SubmissionDraft | null;
+  recordUnsavedWork?: boolean;
 }) {
   const questionContext =
     resLocals.assessment.type === 'Exam' ? 'student_exam' : 'student_homework';
   // TODO: support more tools
   // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   const hasCalculator = enabledTools.some((t) => t.tool === 'calculator');
+
+  const unsavedWorkUrl = `${resLocals.urlPrefix}/instance_question/${resLocals.instance_question.id}/unsaved_work`;
+  // Scoped to the unsaved work routes, which the question form's own CSRF token
+  // doesn't cover.
+  const unsavedWorkCsrfToken = generatePrefixCsrfToken(
+    { url: unsavedWorkUrl, authn_user_id: resLocals.authn_user.id },
+    config.secretKey,
+  );
 
   return PageLayout({
     resLocals,
@@ -60,6 +80,17 @@ export function StudentInstanceQuestion({
         content="${nodeModulesAssetPath('@mathjax/mathjax-newcm-font')}"
       />
       ${compiledScriptTag('question.ts')} ${hasCalculator ? CalculatorDrawerHeadScripts() : ''}
+      ${recordUnsavedWork
+        ? EncodedData<UnsavedWorkData>(
+            {
+              url: unsavedWorkUrl,
+              csrfToken: unsavedWorkCsrfToken,
+              intervalMs: UNSAVED_WORK_INTERVAL_MS,
+              maxBytes: UNSAVED_WORK_MAX_BYTES,
+            },
+            'unsaved-work-data',
+          )
+        : ''}
       ${resLocals.assessment.type === 'Exam'
         ? html`
             ${compiledScriptTag('examTimeLimitCountdown.ts')}
@@ -116,6 +147,15 @@ export function StudentInstanceQuestion({
                   your previous submissions but cannot make new ones.
                 </div>
               `
+            : ''}
+          ${unsavedWorkDraft != null && renderState?.variant != null
+            ? UnsavedWorkAlert({
+                draft: unsavedWorkDraft,
+                variantId: renderState.variant.id,
+                timezone: resLocals.course_instance.display_timezone,
+                csrfToken: unsavedWorkCsrfToken,
+                actionPrefix: unsavedWorkUrl,
+              })
             : ''}
           ${renderState?.variant == null
             ? html`
@@ -250,4 +290,41 @@ export function StudentInstanceQuestion({
       </div>
     `,
   });
+}
+
+function UnsavedWorkAlert({
+  draft,
+  variantId,
+  timezone,
+  csrfToken,
+  actionPrefix,
+}: {
+  draft: SubmissionDraft;
+  variantId: string;
+  timezone: string;
+  csrfToken: string;
+  actionPrefix: string;
+}) {
+  return html`
+    <div class="alert alert-warning" role="alert">
+      <h2 class="h5">We found unsaved work for this question</h2>
+      <p>
+        You had work in progress at ${formatDate(draft.modified_at, timezone)} that was never saved,
+        so it isn't part of your submissions. Restoring it saves it as your latest answer without
+        grading it. Your last saved answer is shown below until you choose.
+      </p>
+      <div class="d-flex flex-wrap gap-2">
+        <form method="POST" action="${actionPrefix}/restore">
+          <input type="hidden" name="__csrf_token" value="${csrfToken}" />
+          <input type="hidden" name="__variant_id" value="${variantId}" />
+          <button type="submit" class="btn btn-primary">Restore unsaved work</button>
+        </form>
+        <form method="POST" action="${actionPrefix}/dismiss">
+          <input type="hidden" name="__csrf_token" value="${csrfToken}" />
+          <input type="hidden" name="__variant_id" value="${variantId}" />
+          <button type="submit" class="btn btn-outline-secondary">Keep last saved answer</button>
+        </form>
+      </div>
+    </div>
+  `;
 }

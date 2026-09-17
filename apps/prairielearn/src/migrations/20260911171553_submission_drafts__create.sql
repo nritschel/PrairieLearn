@@ -1,0 +1,12 @@
+CREATE TABLE IF NOT EXISTS submission_drafts (
+  id BIGSERIAL PRIMARY KEY,
+  variant_id BIGINT NOT NULL REFERENCES variants (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  submitted_answer jsonb NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  modified_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  dismissed_at TIMESTAMP WITH TIME ZONE,
+  UNIQUE (variant_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS submission_drafts_modified_at_idx ON submission_drafts (modified_at);

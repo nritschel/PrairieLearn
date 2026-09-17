@@ -1,7 +1,6 @@
 from collections import deque
 from collections.abc import Callable, Sequence
 from html import escape as html_escape
-from itertools import chain
 
 import lxml.html
 
@@ -27,19 +26,41 @@ VOID_ELEMENTS = frozenset({
 UNESCAPED_ELEMENTS = frozenset({"script", "style"})
 
 
-def traverse_and_execute(
-    html: str, fn: Callable[[lxml.html.HtmlElement], None]
-) -> None:
-    elements = lxml.html.fragments_fromstring(html)
+class SkipChildren:
+    """Marker type for `SKIP_CHILDREN`; see `traverse_and_execute`."""
 
-    for e in chain.from_iterable(
-        element.iter()
-        for element in elements
-        # If there's leading text, the first element of the array will be a string.
-        # We can just discard that.
-        if isinstance(element, lxml.html.HtmlElement)
-    ):
-        fn(e)
+
+SKIP_CHILDREN = SkipChildren()
+"""Return this from a `traverse_and_execute` callback to skip the element's descendants."""
+
+
+def traverse_and_execute(
+    html: str, fn: Callable[[lxml.html.HtmlElement], SkipChildren | None]
+) -> None:
+    """
+    Call `fn` on every node in `html` in document order (pre-order), without
+    modifying the tree.
+
+    If `fn` returns `SKIP_CHILDREN`, the descendants of that node are not visited.
+    This lets a caller that substitutes its own content for a node (e.g. by
+    traversing generated HTML itself) avoid processing the node's original
+    children as well.
+    """
+    fragments = lxml.html.fragments_fromstring(html)
+
+    # If there's leading text, the first element of the array will be a string.
+    # We can just discard that.
+    work_stack: deque[lxml.html.HtmlElement] = deque(
+        reversed([f for f in fragments if isinstance(f, lxml.html.HtmlElement)])
+    )
+
+    while work_stack:
+        element = work_stack.pop()
+
+        if fn(element) is SKIP_CHILDREN:
+            continue
+
+        work_stack.extend(reversed(list(element)))
 
 
 def format_attrib_value(v: str) -> str:

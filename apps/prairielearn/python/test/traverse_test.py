@@ -1,8 +1,11 @@
 from typing import TYPE_CHECKING
 
+import lxml.etree
 import lxml.html
 from prairielearn.internal.traverse import (
+    SKIP_CHILDREN,
     ElementReplacement,
+    SkipChildren,
     traverse_and_execute,
     traverse_and_replace,
 )
@@ -24,6 +27,45 @@ def test_traverse_and_execute() -> None:
 
     assert text == ["Hello", "world"]
     assert tags == ["p", "i", "strong"]
+
+
+def test_traverse_and_execute_multiple_fragments_with_text() -> None:
+    tags: list[str | bytearray | bytes | QName] = []
+
+    traverse_and_execute(
+        "leading <p><i>a</i></p> between <div><b>b</b></div> trailing",
+        lambda e: tags.append(e.tag),
+    )
+
+    assert tags == ["p", "i", "div", "b"]
+
+
+def test_traverse_and_execute_visits_comments() -> None:
+    tags: list[str | bytearray | bytes | QName] = []
+
+    traverse_and_execute(
+        "<div><!-- note --><span>a</span></div>", lambda e: tags.append(e.tag)
+    )
+
+    # Comments are visited too; callers detect them by their non-string tag.
+    assert tags == ["div", lxml.etree.Comment, "span"]
+
+
+def test_traverse_and_execute_skip_children() -> None:
+    tags: list[str | bytearray | bytes | QName] = []
+
+    def visit(element: lxml.html.HtmlElement) -> SkipChildren | None:
+        tags.append(element.tag)
+        if element.tag == "i":
+            return SKIP_CHILDREN
+        return None
+
+    traverse_and_execute(
+        "<p><i><b>skipped</b><u>skipped</u></i><strong><em>kept</em></strong></p>",
+        visit,
+    )
+
+    assert tags == ["p", "i", "strong", "em"]
 
 
 def test_traverse_and_replace_text() -> None:

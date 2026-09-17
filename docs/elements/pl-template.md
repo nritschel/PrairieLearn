@@ -1,6 +1,6 @@
 # `pl-template` element
 
-Displays boilerplate HTML from mustache templates in a reusable way.
+Renders reusable HTML, which may include other elements, from Mustache templates.
 
 ## Sample element
 
@@ -43,12 +43,12 @@ Along with the sample usage of the element, we include a sample template file. T
 
 ## Customizations
 
-| Attribute               | Type                                                                                                      | Default               | Description                                                                                                  |
-| ----------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `directory`             | `"question"`, `"clientFilesQuestion"`, `"clientFilesCourse"`, `"serverFilesCourse"`, `"courseExtensions"` | `"serverFilesCourse"` | Parent directory to locate `file-name`.                                                                      |
-| `file-name`             | string                                                                                                    | —                     | File name of the outer template to use.                                                                      |
-| `log-tag-warnings`      | boolean                                                                                                   | true                  | Whether to log warnings if a rendered template contains elements which are not guaranteed to work correctly. |
-| `log-variable-warnings` | boolean                                                                                                   | false                 | Whether to log warnings when rendering templates with undefined variables. Useful for debugging.             |
+| Attribute               | Type                                                                                                      | Default               | Description                                                                                                         |
+| ----------------------- | --------------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `directory`             | `"question"`, `"clientFilesQuestion"`, `"clientFilesCourse"`, `"serverFilesCourse"`, `"courseExtensions"` | `"serverFilesCourse"` | Parent directory to locate `file-name`.                                                                             |
+| `file-name`             | string                                                                                                    | —                     | File name of the outer template to use.                                                                             |
+| `log-tag-warnings`      | boolean                                                                                                   | true                  | Whether to log a warning if a rendered template contains a `<markdown>` tag, which has no effect inside a template. |
+| `log-variable-warnings` | boolean                                                                                                   | false                 | Whether to log warnings when rendering templates with undefined variables. Useful for debugging.                    |
 
 Inside the `pl-template` element, variables for use in rendering the template may be specified with a `pl-variable` tag. Each `pl-variable` tag can be used to define a variable with data from a file or with the contents of the tag (but not both). Note that substitution is **not** applied to external files used in `pl-variable` (files are used as-is). The `pl-variable` tag supports the following attributes:
 
@@ -61,16 +61,58 @@ Inside the `pl-template` element, variables for use in rendering the template ma
 
 ## Details
 
-Because of the way that elements are rendered in PrairieLearn, templates should only contain other decorative elements. In particular, **elements that accept and/or grade student input used within this element will not work correctly.** When rendering a template, all entries from `data["params"]` and `data["preferences"]` are included as available variables and may be used when the template is rendered, using the `{{params.variable_name}}` or `{{preferences.variable_name}}` syntax. Each instance of the `pl-template` element also has a unique `uuid` variable available for rendering. Templates may also be used within other templates.
+When a template is rendered, all entries from `data["params"]` and `data["preferences"]` are included as available variables and may be used using the `{{params.variable_name}}` or `{{preferences.variable_name}}` syntax. Each instance of the `pl-template` element also has a unique `uuid` variable available for rendering. Templates may also be used within other templates.
+
+The rendered template is processed exactly as if its contents had been written directly in `question.html`, so a template may contain any element, including elements that accept and grade student input. The template file and the element's attributes are validated when a question variant is created, so a missing template or an invalid attribute is reported at that point rather than when the question is first displayed.
+
+!!! warning
+
+    The `uuid` variable has a different value each time the template is rendered, which happens whenever the question is prepared, rendered, parsed, or graded. It is safe to use in DOM `id` attributes, but it must **never** be used in an `answers-name` attribute; pass the name in with a `pl-variable` instead.
 
 !!! note
 
     The id `#` CSS selector does _not_ work for ids that start with a number, so uuids should be prefixed (as these may start with a number).
 
+!!! note
+
+    `<markdown>` tags are converted before any element is rendered, so they have no effect when produced by a template. Write Markdown outside of the template, or use plain HTML inside it.
+
+## Templates with input elements
+
+A template that contains an input element can be reused for several parts of a question. Here the answer name and prompt vary per part, while the correct answers are set by `server.py` as usual:
+
+```html title="templates/question_part.mustache"
+<div class="card my-2">
+  <div class="card-header">{{{header}}}</div>
+  <div class="card-body">
+    <p>{{{prompt}}}</p>
+    <pl-number-input answers-name="{{answers-name}}" label="{{{label}}}"></pl-number-input>
+  </div>
+</div>
+```
+
+```html title="question.html"
+<pl-template file-name="templates/question_part.mustache">
+  <pl-variable name="header">Part 1</pl-variable>
+  <pl-variable name="prompt">What is the velocity after $t$ seconds?</pl-variable>
+  <pl-variable name="answers-name">v</pl-variable>
+  <pl-variable name="label">$v =$</pl-variable>
+</pl-template>
+
+<pl-template file-name="templates/question_part.mustache">
+  <pl-variable name="header">Part 2</pl-variable>
+  <pl-variable name="prompt">How far has the car traveled after $t$ seconds?</pl-variable>
+  <pl-variable name="answers-name">d</pl-variable>
+  <pl-variable name="label">$d =$</pl-variable>
+</pl-template>
+```
+
 ## Example implementations
 
 - [element/template]
+- [element/templateInput]
 
 ---
 
 [element/template]: https://github.com/PrairieLearn/PrairieLearn/tree/master/exampleCourse/questions/element/template
+[element/templateInput]: https://github.com/PrairieLearn/PrairieLearn/tree/master/exampleCourse/questions/element/templateInput
